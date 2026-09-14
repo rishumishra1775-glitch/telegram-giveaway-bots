@@ -10,7 +10,7 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-// /start command with actual verification web URL
+// /start command with standard URL button
 bot.start(async (ctx) => {
   try {
     const userName = ctx.from.first_name || 'User';
