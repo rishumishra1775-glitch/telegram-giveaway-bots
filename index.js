@@ -1,7 +1,6 @@
 const { Telegraf, Markup } = require('telegraf');
 const http = require('http');
 
-// Token ko automatically detect karega
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
 if (!token) {
@@ -11,38 +10,47 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-// /start command with Inline Buttons
-bot.start((ctx) => {
-  const userName = ctx.from.first_name || 'User';
-  
-  ctx.reply(
-    `Welcome, ${userName}! 🎉\n\nWelcome to the Secure Giveaway Bot. To participate and lock in your entry, please complete your device verification below.`,
-    Markup.inlineKeyboard([
-      [Markup.button.url('🔗 Verify Device', 'https://t.me')], // Yahan apna verification URL daal sakta hai
-      [Markup.button.callback('📊 Check Status', 'check_status')]
-    ])
-  );
+// /start command
+bot.start(async (ctx) => {
+  try {
+    const userName = ctx.from.first_name || 'User';
+    await ctx.reply(
+      `Welcome, ${userName}! 🎉\n\nTo participate in the secure giveaway and lock in your entry, please complete your **Device Verification** below.`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url('🔗 Verify Device', 'https://t.me')],
+          [Markup.button.callback('📊 Check Status', 'check_status')]
+        ])
+      }
+    );
+  } catch (err) {
+    console.error('Error in /start command:', err);
+  }
 });
 
-// Button click handler for 'Check Status'
+// Callback query for status check
 bot.action('check_status', async (ctx) => {
-  await ctx.answerCbQuery(); // Loading state hatane ke liye
-  await ctx.reply('⚠️ Verification Pending! Please click on "Verify Device" to complete your entry.');
+  try {
+    await ctx.answerCbQuery();
+    await ctx.reply('⚠️ Device Verification Pending! Please click on "Verify Device" to complete your verification.');
+  } catch (err) {
+    console.error('Error in action:', err);
+  }
 });
 
-// Help command
 bot.help((ctx) => {
-  ctx.reply('Use /start to begin participating in the secure giveaway and verify your device.');
+  ctx.reply('Use /start to begin participating in the secure giveaway.');
 });
 
-// Bot launch
+// Launch bot
 bot.launch().then(() => {
   console.log('Bot is successfully running and connected to Telegram!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
 
-// Render ke liye dummy HTTP server taaki port open rahe aur timeout na aaye
+// Render HTTP server port binding
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -51,6 +59,5 @@ http.createServer((req, res) => {
   console.log(`HTTP server is listening on port ${PORT}`);
 });
 
-// Enable graceful stop
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
