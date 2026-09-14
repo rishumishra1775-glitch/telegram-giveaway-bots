@@ -1,6 +1,7 @@
 const { Telegraf } = require('telegraf');
+const http = require('http');
 
-// Token ko automatically detect karega chahe BOT_TOKEN ho ya TOKEN
+// Token ko automatically detect karega
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
 if (!token) {
@@ -23,6 +24,15 @@ bot.launch().then(() => {
   console.log('Bot is successfully running and connected to Telegram!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
+});
+
+// Render ke liye dummy HTTP server taaki port open rahe aur timeout na aaye
+const PORT = process.env.PORT || 3000;
+http.createServer((req, res) => {
+  res.writeHead(200, { 'Content-Type': 'text/plain' });
+  res.end('Bot is running successfully!\n');
+}).listen(PORT, () => {
+  console.log(`HTTP server is listening on port ${PORT}`);
 });
 
 // Enable graceful stop
