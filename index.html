@@ -26,10 +26,11 @@
         }
         h2 { color: #38bdf8; }
         p { color: #94a3b8; font-size: 14px; margin-bottom: 10px;}
-        #status { margin-top: 20px; font-weight: bold; }
+        #status { margin-top: 20px; font-weight: bold; font-size: 15px;}
+        
         .btn {
-            background-color: #22c55e;
-            color: white;
+            background-color: #38bdf8;
+            color: #0f172a;
             padding: 12px 20px;
             border: none;
             border-radius: 6px;
@@ -37,9 +38,19 @@
             cursor: pointer;
             margin-top: 20px;
             width: 100%;
+            font-weight: bold;
         }
-        .btn:hover { background-color: #16a34a; }
-        .btn:disabled { background-color: #475569; cursor: not-allowed; }
+        .btn:hover { background-color: #7dd3fc; }
+        
+        #returnBtn {
+            background-color: #22c55e; /* Green */
+            color: white;
+            display: none; /* Hidden by default */
+            margin-top: 15px;
+        }
+        #returnBtn:hover { background-color: #16a34a; }
+        
+        .btn:disabled { background-color: #475569; cursor: not-allowed; color: #94a3b8; }
     </style>
 </head>
 <body>
@@ -47,16 +58,27 @@
         <h2>🔒 Device Verification</h2>
         <p>Please verify your device to secure your entry. One device is allowed per user.</p>
         <p style="color: #facc15; font-size: 12px;">Note: This device will be locked after verification.</p>
+        
         <button id="verifyBtn" class="btn" onclick="verifyDevice()">Verify My Device</button>
+        
+        <!-- Success Message & Return Button -->
         <p id="status"></p>
+        <a id="returnBtn" class="btn" href="tg://resolve?domain=TERA_BOT_USERNAME_YAHAN_DAALE" onclick="setVerifiedFlag()">✅ Return to Telegram & Complete</a>
     </div>
 
     <script>
+        // 1. Replace TERA_BOT_USERNAME_YAHAN_DAALE with your actual Telegram bot username (without the @ symbol)
+        const botUsername = "TERA_BOT_USERNAME_YAHAN_DAALE";
+        
+        // Update the href with the correct bot username
+        document.getElementById('returnBtn').href = `tg://resolve?domain=${botUsername}&start=verify_success`;
+
         function verifyDevice() {
             const statusText = document.getElementById('status');
             const verifyBtn = document.getElementById('verifyBtn');
+            const returnBtn = document.getElementById('returnBtn');
             
-            // 1. Check for existing lock in LocalStorage
+            // 2. Check for existing lock in LocalStorage
             const deviceLocked = localStorage.getItem('telegram_bot_verified');
             
             if (deviceLocked) {
@@ -67,23 +89,24 @@
                 return;
             }
 
-            // 2. Run verification process
+            // 3. Run verification process
             statusText.style.color = "#facc15"; // Yellow
             statusText.innerText = "Checking device fingerprint...";
             verifyBtn.disabled = true;
             verifyBtn.innerText = "Processing...";
             
             setTimeout(() => {
-                // 3. If successful, set the lock
+                // 4. If successful, set the lock and show return button
                 localStorage.setItem('telegram_bot_verified', 'true');
                 
                 statusText.style.color = "#4ade80"; // Green
-                statusText.innerText = "✅ Device Verified Successfully! This device is now locked. You can now return to Telegram.";
-                verifyBtn.innerText = "Device Locked";
+                statusText.innerText = "✅ Device Verified Successfully! This device is now locked.";
+                verifyBtn.style.display = "none";
+                returnBtn.style.display = "block"; // Show the button to go back to Telegram
             }, 1500);
         }
 
-        // On page load, check if already locked to disable button immediately
+        // On page load, check if already locked
         window.onload = function() {
             if (localStorage.getItem('telegram_bot_verified')) {
                  const statusText = document.getElementById('status');
@@ -93,6 +116,12 @@
                  verifyBtn.disabled = true;
                  verifyBtn.innerText = "Already Verified";
             }
+        }
+
+        // Optional: When returning, you could send a signal to the bot if you had a backend.
+        function setVerifiedFlag() {
+            // localStorage is already set, so we just let the link open Telegram.
+            console.log("Returning to Telegram...");
         }
     </script>
 </body>
