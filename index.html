@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Secure Device Verification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #0f172a;
+            color: #ffffff;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+        }
+        .card {
+            background-color: #1e293b;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
+            text-align: center;
+            max-width: 400px;
+            width: 100%;
+        }
+        h2 { color: #38bdf8; }
+        p { color: #94a3b8; font-size: 14px; }
+        .btn {
+            background-color: #22c55e;
+            color: white;
+            padding: 12px 20px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            cursor: pointer;
+            margin-top: 20px;
+            width: 100%;
+        }
+        .btn:hover { background-color: #16a34a; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h2>🔒 Device Verification</h2>
+        <p>Click the button below to verify your device and secure your entry for the Telegram giveaway.</p>
+        <button class="btn" onclick="verifyDevice()">Verify My Device</button>
+        <p id="status" style="margin-top: 15px; color: #facc15;"></p>
+    </div>
+
+    <script>
+        function verifyDevice() {
+            const statusText = document.getElementById('status');
+            statusText.innerText = "Checking device fingerprint...";
+            
+            setTimeout(() => {
+                // Yahan device info ya browser details capture kar sakte hain
+                statusText.style.color = "#4ade80";
+                statusText.innerText = "✅ Device Verified Successfully! You can now return to Telegram.";
+            }, 1500);
+        }
+    </script>
+</body>
+</html>
