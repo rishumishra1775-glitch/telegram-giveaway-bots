@@ -1,4 +1,4 @@
-const { Telegraf } = require('telegraf');
+const { Telegraf, Markup } = require('telegraf');
 const http = require('http');
 
 // Token ko automatically detect karega
@@ -11,12 +11,28 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
+// /start command with Inline Buttons
 bot.start((ctx) => {
-  ctx.reply('Welcome to the Secure Giveaway Bot! 🚀\nYour device verification system is active.');
+  const userName = ctx.from.first_name || 'User';
+  
+  ctx.reply(
+    `Welcome, ${userName}! 🎉\n\nWelcome to the Secure Giveaway Bot. To participate and lock in your entry, please complete your device verification below.`,
+    Markup.inlineKeyboard([
+      [Markup.button.url('🔗 Verify Device', 'https://t.me')], // Yahan apna verification URL daal sakta hai
+      [Markup.button.callback('📊 Check Status', 'check_status')]
+    ])
+  );
 });
 
+// Button click handler for 'Check Status'
+bot.action('check_status', async (ctx) => {
+  await ctx.answerCbQuery(); // Loading state hatane ke liye
+  await ctx.reply('⚠️ Verification Pending! Please click on "Verify Device" to complete your entry.');
+});
+
+// Help command
 bot.help((ctx) => {
-  ctx.reply('Use /start to begin participating in the secure giveaway.');
+  ctx.reply('Use /start to begin participating in the secure giveaway and verify your device.');
 });
 
 // Bot launch
