@@ -1,0 +1,12 @@
+{
+  "name": "telegram-giveaway-bots",
+  "version": "1.0.0",
+  "description": "Secure Telegram giveaway bot with device verification",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "telegraf": "^4.16.3"
+  }
+}
