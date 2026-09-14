@@ -6,7 +6,7 @@
     <title>Secure Device Verification</title>
     <style>
         body {
-            font-family: Arial, sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background-color: #0f172a;
             color: #ffffff;
             display: flex;
@@ -25,7 +25,8 @@
             width: 100%;
         }
         h2 { color: #38bdf8; }
-        p { color: #94a3b8; font-size: 14px; }
+        p { color: #94a3b8; font-size: 14px; margin-bottom: 10px;}
+        #status { margin-top: 20px; font-weight: bold; }
         .btn {
             background-color: #22c55e;
             color: white;
@@ -38,26 +39,60 @@
             width: 100%;
         }
         .btn:hover { background-color: #16a34a; }
+        .btn:disabled { background-color: #475569; cursor: not-allowed; }
     </style>
 </head>
 <body>
     <div class="card">
         <h2>🔒 Device Verification</h2>
-        <p>Click the button below to verify your device and secure your entry for the Telegram giveaway.</p>
-        <button class="btn" onclick="verifyDevice()">Verify My Device</button>
-        <p id="status" style="margin-top: 15px; color: #facc15;"></p>
+        <p>Please verify your device to secure your entry. One device is allowed per user.</p>
+        <p style="color: #facc15; font-size: 12px;">Note: This device will be locked after verification.</p>
+        <button id="verifyBtn" class="btn" onclick="verifyDevice()">Verify My Device</button>
+        <p id="status"></p>
     </div>
 
     <script>
         function verifyDevice() {
             const statusText = document.getElementById('status');
+            const verifyBtn = document.getElementById('verifyBtn');
+            
+            // 1. Check for existing lock in LocalStorage
+            const deviceLocked = localStorage.getItem('telegram_bot_verified');
+            
+            if (deviceLocked) {
+                statusText.style.color = "#ef4444"; // Red
+                statusText.innerText = "⚠️ Verification Already Completed! This device has already been used for verification from a previous account.";
+                verifyBtn.disabled = true;
+                verifyBtn.innerText = "Already Verified";
+                return;
+            }
+
+            // 2. Run verification process
+            statusText.style.color = "#facc15"; // Yellow
             statusText.innerText = "Checking device fingerprint...";
+            verifyBtn.disabled = true;
+            verifyBtn.innerText = "Processing...";
             
             setTimeout(() => {
-                // Yahan device info ya browser details capture kar sakte hain
-                statusText.style.color = "#4ade80";
-                statusText.innerText = "✅ Device Verified Successfully! You can now return to Telegram.";
+                // 3. If successful, set the lock
+                localStorage.setItem('telegram_bot_verified', 'true');
+                
+                statusText.style.color = "#4ade80"; // Green
+                statusText.innerText = "✅ Device Verified Successfully! This device is now locked. You can now return to Telegram.";
+                verifyBtn.innerText = "Device Locked";
             }, 1500);
+        }
+
+        // On page load, check if already locked to disable button immediately
+        window.onload = function() {
+            if (localStorage.getItem('telegram_bot_verified')) {
+                 const statusText = document.getElementById('status');
+                 const verifyBtn = document.getElementById('verifyBtn');
+                 statusText.style.color = "#ef4444";
+                 statusText.innerText = "⚠️ Verification Already Completed on this device.";
+                 verifyBtn.disabled = true;
+                 verifyBtn.innerText = "Already Verified";
+            }
         }
     </script>
 </body>
