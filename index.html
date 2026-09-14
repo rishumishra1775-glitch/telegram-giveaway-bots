@@ -70,24 +70,38 @@
         const urlParams = new URLSearchParams(window.location.search);
         const userId = urlParams.get('user');
 
+        // Tera Admin Telegram ID yahan set kar diya hai
+        const ADMIN_TELEGRAM_ID = "7449469384";
         const botUsername = "realsvotebot";
+        
         document.getElementById('returnBtn').href = `https://t.me/${botUsername}`;
 
         window.onload = function() {
             const statusText = document.getElementById('status');
             const verifyBtn = document.getElementById('verifyBtn');
+            const returnBtn = document.getElementById('returnBtn');
 
             if (!userId) {
                 statusText.style.color = "#ef4444";
-                statusText.innerText = "⚠️ Error: User ID not found! Please open this link directly from your Telegram bot using the Verify button.";
+                statusText.innerText = "⚠️ Error: User ID not found! Please open this link directly from your Telegram bot.";
                 verifyBtn.disabled = true;
                 verifyBtn.innerText = "Invalid Session";
                 return;
             }
 
+            // AGAR TU ADMIN HAI, TOH DEVICE LOCK BYPASS HO JAYEGA!
+            if (userId === ADMIN_TELEGRAM_ID) {
+                statusText.style.color = "#4ade80";
+                statusText.innerText = "👑 Admin Bypass Active: No verification needed for you!";
+                verifyBtn.style.display = "none";
+                returnBtn.style.display = "block"; // Seedha Telegram wapas jane ka button dikhega
+                return;
+            }
+
+            // Normal users ke liye device lock check
             if (localStorage.getItem('telegram_bot_verified')) {
                 statusText.style.color = "#ef4444";
-                statusText.innerText = "⚠️ Verification Already Completed! This device has already been locked for another account.";
+                statusText.innerText = "⚠️ Verification Already Completed! This device has already been locked.";
                 verifyBtn.disabled = true;
                 verifyBtn.innerText = "Already Verified";
             }
@@ -98,14 +112,7 @@
             const verifyBtn = document.getElementById('verifyBtn');
             const returnBtn = document.getElementById('returnBtn');
             
-            if (!userId) {
-                alert("User ID missing!");
-                return;
-            }
-
-            if (localStorage.getItem('telegram_op_verified') || localStorage.getItem('telegram_bot_verified')) {
-                return;
-            }
+            if (!userId) return;
 
             statusText.style.color = "#facc15";
             statusText.innerText = "Verifying device securely...";
