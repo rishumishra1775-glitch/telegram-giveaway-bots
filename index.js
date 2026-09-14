@@ -10,7 +10,7 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-// /start command
+// /start command with actual verification web URL
 bot.start(async (ctx) => {
   try {
     const userName = ctx.from.first_name || 'User';
@@ -19,7 +19,7 @@ bot.start(async (ctx) => {
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
-          [Markup.button.url('🔗 Verify Device', 'https://t.me')],
+          [Markup.button.url('🔗 Verify Device', 'https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/')],
           [Markup.button.callback('📊 Check Status', 'check_status')]
         ])
       }
