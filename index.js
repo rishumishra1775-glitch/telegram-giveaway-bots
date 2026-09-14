@@ -11,11 +11,9 @@ if (!token) {
 const bot = new Telegraf(token);
 
 // Memory storage for wizards, active giveaways, and votes tracking
-const userState = {};      // Wizard states for creation
-const activeGiveaways = {}; // Stores giveaway options, message IDs, and votes count
-const userVotes = {};      // Tracks which user voted for which giveaway & option ({ userId_giveawayId: optionIndex })
-
-const botUsername = "realsvotebot";
+const userState = {};      
+const activeGiveaways = {}; 
+const userVotes = {};      
 
 // /start command
 bot.start(async (ctx) => {
@@ -80,7 +78,7 @@ bot.action('menu_create', async (ctx) => {
 
 bot.action('menu_close', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('⚠️ To close a giveaway, reply with `/close <giveaway_id>` or use the close command in your channel.');
+  await ctx.reply('⚠️ To close a giveaway, reply with `/close <giveaway_id>` or use the close command.');
 });
 
 bot.action('menu_help', async (ctx) => {
@@ -88,7 +86,7 @@ bot.action('menu_help', async (ctx) => {
   await ctx.reply('💡 **Help Guide:**\n1. Use `/create` to start a new giveaway wizard.\n2. Add the bot as Admin in your target channel.\n3. Users must verify their device to vote securely.');
 });
 
-// --- GIVEAWAY CREATION WIZARD (Open for all users with channel admin check) ---
+// --- GIVEAWAY CREATION WIZARD ---
 const startCreationWizard = async (ctx) => {
   const userId = ctx.from.id;
   userState[userId] = { step: 'waiting_channel' };
@@ -151,7 +149,6 @@ bot.on('text', async (ctx, next) => {
 
     const giveawayId = 'gw_' + Date.now();
     
-    // Initialize active giveaway data
     activeGiveaways[giveawayId] = {
       title,
       prize,
@@ -160,7 +157,6 @@ bot.on('text', async (ctx, next) => {
       status: 'active'
     };
 
-    // Build buttons for options
     const buttons = options.map((opt, index) => [
       Markup.button.callback(`🗳 ${opt} (0)`, `vote_${giveawayId}_${index}`)
     ]);
@@ -170,7 +166,7 @@ bot.on('text', async (ctx, next) => {
     try {
       const sentMsg = await ctx.telegram.sendMessage(
         channel,
-        📱 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote! (Device verification required)`,
+        `📱 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote! (Device verification required)`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard(buttons)
@@ -201,20 +197,16 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
       return ctx.answerCbQuery({ text: '❌ This voting session is closed!', show_alert: true });
     }
 
-    // Check if user already voted in this giveaway
     const voteKey = `${userId}_${giveawayId}`;
     if (userVotes[voteKey] !== undefined) {
       return ctx.answerCbQuery({ text: '⚠️ You have already voted in this giveaway!', show_alert: true });
     }
 
-    // Prompt device verification URL
     const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
     
-    // Temporarily record vote and increment count (or enforce verification first based on your preference)
     userVotes[voteKey] = optionIndex;
     giveaway.options[optionIndex].votes += 1;
 
-    // Update message buttons with new vote counts
     const updatedButtons = giveaway.options.map((opt, idx) => [
       Markup.button.callback(`🗳 ${opt.name} (${opt.votes})`, `vote_${giveawayId}_${idx}`)
     ]);
@@ -230,7 +222,6 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
 
     await ctx.answerCbQuery({ text: '✅ Vote recorded successfully!' });
 
-    // Send verification prompt to user chat
     await ctx.telegram.sendMessage(
       userId,
       `🔒 **Anti-Fraud Verification Required**\n\nYour vote for **${giveaway.options[optionIndex].name}** has been registered, but please verify your device to keep your entry secure:`,
@@ -271,7 +262,6 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
   }
 });
 
-// Command alternative to close giveaway
 bot.command('close', async (ctx) => {
   const args = ctx.message.text.split(' ');
   const giveawayId = args[1];
@@ -307,11 +297,9 @@ bot.on('chat_member', async (ctx) => {
     const oldStatus = update.old_chat_member.status;
     const newStatus = update.new_chat_member.status;
 
-    // Check if user left the channel/group
     if (['member', 'administrator'].includes(oldStatus) && ['left', 'kicked'].includes(newStatus)) {
       const userId = update.from.user.id;
 
-      // Check all active giveaways to see if this user voted
       for (const giveawayId in activeGiveaways) {
         const voteKey = `${userId}_${giveawayId}`;
         if (userVotes[voteKey] !== undefined) {
@@ -319,14 +307,11 @@ bot.on('chat_member', async (ctx) => {
           const giveaway = activeGiveaways[giveawayId];
 
           if (giveaway && giveaway.status === 'active') {
-            // Subtract vote
             if (giveaway.options[optionIndex].votes > 0) {
               giveaway.options[optionIndex].votes -= 1;
             }
-            // Remove user vote record
             delete userVotes[voteKey];
 
-            // Update channel message if messageId exists
             if (giveaway.messageId) {
               const updatedButtons = giveaway.options.map((opt, idx) => [
                 Markup.button.callback(`🗳 ${opt.name} (${opt.votes})`, `vote_${giveawayId}_${idx}`)
@@ -337,7 +322,7 @@ bot.on('chat_member', async (ctx) => {
                 giveaway.channel,
                 giveaway.messageId,
                 undefined,
-                `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote! (Device verification required)`,
+                `📱 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote! (Device verification required)`,
                 {
                   parse_mode: 'Markdown',
                   ...Markup.inlineKeyboard(updatedButtons)
@@ -355,7 +340,7 @@ bot.on('chat_member', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot is running with full giveaway wizard, menu, and anti-exit features!');
+  console.log('Bot is running successfully with all features!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
