@@ -43,7 +43,7 @@
         .btn:hover { background-color: #7dd3fc; }
         
         #returnBtn {
-            background-color: #22c55e; /* Green */
+            background-color: #22c55e;
             color: white;
             display: none;
             margin-top: 15px;
@@ -67,11 +67,9 @@
     </div>
 
     <script>
-        // Get Telegram User ID from URL parameters
         const urlParams = new URLSearchParams(window.location.search);
         const userId = urlParams.get('user');
 
-        // Bot username set automatically
         const botUsername = "realsvotebot";
         document.getElementById('returnBtn').href = `https://t.me/${botUsername}`;
 
@@ -79,7 +77,6 @@
             const statusText = document.getElementById('status');
             const verifyBtn = document.getElementById('verifyBtn');
 
-            // If user ID is missing from URL
             if (!userId) {
                 statusText.style.color = "#ef4444";
                 statusText.innerText = "⚠️ Error: User ID not found! Please open this link directly from your Telegram bot using the Verify button.";
@@ -88,7 +85,6 @@
                 return;
             }
 
-            // Check if this device is already locked
             if (localStorage.getItem('telegram_bot_verified')) {
                 statusText.style.color = "#ef4444";
                 statusText.innerText = "⚠️ Verification Already Completed! This device has already been locked for another account.";
@@ -107,7 +103,7 @@
                 return;
             }
 
-            if (localStorage.getItem('telegram_bot_verified')) {
+            if (localStorage.getItem('telegram_op_verified') || localStorage.getItem('telegram_bot_verified')) {
                 return;
             }
 
@@ -117,7 +113,6 @@
             verifyBtn.innerText = "Processing...";
             
             setTimeout(() => {
-                // Save lock in browser with user id
                 localStorage.setItem('telegram_bot_verified', userId);
                 
                 statusText.style.color = "#4ade80";
