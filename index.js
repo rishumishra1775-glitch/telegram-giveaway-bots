@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const http = require('http');
+const http = http = require('http');
 
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
@@ -23,8 +23,9 @@ bot.telegram.setMyCommands([
 
 // Memory storage
 const userState = {};      
-const activeGiveaways = {}; 
+const activeGiveaways = {}; // Store all active giveaways (Multiple allowed per admin)
 const pendingGiveaways = {}; 
+const userVotesRecord = {}; // Track user votes to prevent multiple voting: userVotesRecord[giveawayId][userId] = true
 
 // Main Control Panel Keyboard
 const getControlPanelKeyboard = () => {
@@ -94,13 +95,14 @@ bot.action('menu_close', async (ctx) => {
 
 bot.action('menu_support', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('📞 **Support Desk:**\n\n1. Only the creator can close or edit a poll.\n2. Send all nominee names in a single message separated by commas or new lines.\n3. Preview screen lets you check before final posting.', { parse_mode: 'Markdown' });
+  await ctx.reply('📞 **Support Desk:**\n\n1. Admins can create multiple polls simultaneously.\n2. Each voter can only vote **once** per poll.\n3. Send nominee names line by line.', { parse_mode: 'Markdown' });
 });
 
 // --- STEP-BY-STEP GIVEAWAY CREATION WIZARD ---
 const startCreationWizard = async (ctx) => {
   const userId = ctx.from.id;
   userState[userId] = { step: 'waiting_channel' };
+  pendingGiveaways[userId] = {};
   await ctx.reply('📢 **Giveaway Creator Wizard Started**\n\nPlease send your Target Channel username or link (e.g., `@mychannel`):', { parse_mode: 'Markdown' });
 };
 
@@ -146,20 +148,18 @@ bot.on('text', async (ctx, next) => {
     state.prize = text;
     state.step = 'waiting_all_nominees';
     return ctx.reply(
-      '👥 **Enter All Nominee Names:**\n\nSend all the nominee names in a single message (separate each name with a new line or comma):',
+      '👥 **Enter All Nominee Names:**\n\nSend all the nominee names (each name on a new line):',
       { parse_mode: 'Markdown' }
     );
   }
 
-  // Step 4: Parse all nominees at once and show PREVIEW
+  // Step 4: Parse nominees line-by-line and show PREVIEW
   if (state.step === 'waiting_all_nominees') {
-    const options = text.split(/[\n,]+/).map(opt => opt.trim()).filter(opt => opt.length > 0);
+    const options = text.split(/\r?\n|,/).map(opt => opt.trim()).filter(opt => opt.length > 0);
 
     if (options.length === 0) {
       return ctx.reply('⚠️ Please provide at least one valid nominee name.');
     }
-
-    delete userState[userId];
 
     pendingGiveaways[userId] = {
       creatorId: userId,
@@ -168,6 +168,8 @@ bot.on('text', async (ctx, next) => {
       prize: state.prize,
       options: options.map(opt => ({ name: opt, votes: 0 }))
     };
+
+    delete userState[userId];
 
     const previewData = pendingGiveaways[userId];
     const previewButtons = previewData.options.map((opt, index) => {
@@ -227,6 +229,9 @@ bot.action('confirm_post_giveaway', async (ctx) => {
       options: previewData.options,
       status: 'active'
     };
+
+    // Initialize vote tracking for this specific poll
+    userVotesRecord[giveawayId] = {};
 
     const buttons = previewData.options.map((opt, index) => {
       const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
@@ -510,14 +515,42 @@ bot.command('close', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot running smoothly with Instant Channel Validation & Preview Flow!');
+  console.log('Bot running smoothly with Multiple Concurrent Polls & Single Vote Restriction!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
 
-// HTTP Server with Keep-Alive Self-Ping
+// HTTP Server with Keep-Alive & Secure Vote Handler (1 Vote per User per Poll)
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
+  const urlParams = new URL(req.url, `http://${req.headers.host}`);
+  if (urlParams.pathname === '/vote') {
+    const gw = urlParams.searchParams.get('gw');
+    const opt = parseInt(urlParams.searchParams.get('opt'));
+    const voterId = urlParams.searchParams.get('user'); // Voter Telegram ID from WebApp
+
+    if (activeGiveaways[gw] && activeGiveaways[gw].options[opt]) {
+      // Check if user already voted in this specific poll
+      if (userVotesRecord[gw] && userVotesRecord[gw][voterId]) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'You have already voted in this poll!' }));
+        return;
+      }
+
+      // Record vote
+      if (!userVotesRecord[gw]) userVotesRecord[gw] = {};
+      userVotesRecord[gw][voterId] = true;
+
+      // Increment vote count
+      activeGiveaways[gw].options[opt].votes += 1;
+      updateChannelPollMessage(gw);
+
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: true, votes: activeGiveaways[gw].options[opt].votes }));
+      return;
+    }
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
   res.end('Bot server is active 24/7!\n');
 });
