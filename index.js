@@ -150,7 +150,7 @@ bot.on('text', async (ctx, next) => {
     );
   }
 
-  // Step 4: Parse nominees and show PREVIEW with Base64 encoded payload to prevent expiration
+  // Step 4: Parse nominees and show PREVIEW
   if (state.step === 'waiting_all_nominees') {
     const options = text.split(/\r?\n|,/).map(opt => opt.trim()).filter(opt => opt.length > 0);
 
@@ -168,14 +168,7 @@ bot.on('text', async (ctx, next) => {
 
     delete userState[userId];
 
-    // Encode payload into base64 string for button callback
-    const encodedData = Buffer.from(JSON.stringify(payloadObj)).toString('base64');
-    
-    // Telegram callback_data has 64-byte limit, if payload is large, handle safely or use chunks. 
-    // To stay safely under limits, let's store it in a persistent JSON map or use short token if needed, 
-    // but here we can store it in a global object that doesn't clear easily, or encode minimal data.
-    // Let's use a robust global map `pendingPayloads` that persists across standard flow.
-    const payloadId = 'p_' + Math.random().toString(36.substring(2, 9));
+    const payloadId = 'p_' + Math.random().toString(36).substring(2, 9);
     activeGiveaways[payloadId] = payloadObj;
 
     const previewButtons = options.map((opt, index) => {
@@ -254,7 +247,7 @@ bot.action(/^confirm_(p_.+)$/, async (ctx) => {
       }
     );
 
-    giveaway.messageId = sentMsg.message_id;
+    activeGiveaways[giveawayId].messageId = sentMsg.message_id;
 
     await ctx.answerCbQuery({ text: '🎉 Giveaway posted successfully!' });
     await ctx.editMessageText(`🎉 **Giveaway successfully posted to your channel!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
