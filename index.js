@@ -10,9 +10,9 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-// Set Telegram Bot Commands Menu
+// Set clean Bot Commands Menu (No 'What can this bot do' text)
 bot.telegram.setMyCommands([
-  { command: 'start', description: 'Start Bot & View Panel' },
+  { command: 'start', description: 'Open Control Panel' },
   { command: 'menu', description: 'Open Control Panel' },
   { command: 'create', description: 'Create New Giveaway / Poll' },
   { command: 'close', description: 'Close Active Poll' },
@@ -24,22 +24,19 @@ const userState = {};
 const activeGiveaways = {}; 
 const userVotes = {};      
 
-// /start command with visible options
+// /start command (Clean & Direct)
 bot.start(async (ctx) => {
   try {
     const userName = ctx.from.first_name || 'User';
-    const userId = ctx.from.id;
-    const webAppUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
 
     await ctx.reply(
-      `Welcome, ${userName}! 🎉\n\nChoose an option from the panel below or verify your device to participate in secure giveaways.`,
+      `Welcome, ${userName}! 🎉\n\nChoose an option from the panel below to manage or create your giveaways:`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard([
           [Markup.button.callback('➕ Create Giveaway', 'menu_create')],
           [Markup.button.callback('🔒 Close Poll', 'menu_close')],
-          [Markup.button.callback('📞 Support', 'menu_support')],
-          [Markup.button.url('🔗 Verify Device', webAppUrl)]
+          [Markup.button.callback('📞 Support', 'menu_support')]
         ])
       }
     );
@@ -164,10 +161,10 @@ bot.on('text', async (ctx, next) => {
     buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
     try {
-      // Forward / Post the poll directly to the user's specified channel
+      // Post the poll directly to the user's specified channel
       const sentMsg = await ctx.telegram.sendMessage(
         channel,
-        `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
+        `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote in the channel!`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard(buttons)
@@ -186,7 +183,7 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-// --- VOTING HANDLING & LIVE CHANNEL UPDATE ---
+// --- VOTING HANDLING & LIVE CHANNEL UPDATE (No verification prompt) ---
 bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
   try {
     const giveawayId = ctx.match[1];
@@ -203,8 +200,6 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
       return ctx.answerCbQuery({ text: '⚠️ You have already voted in this giveaway!', show_alert: true });
     }
 
-    const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
-    
     // Register vote
     userVotes[voteKey] = optionIndex;
     giveaway.options[optionIndex].votes += 1;
@@ -219,25 +214,20 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
       giveaway.channel,
       giveaway.messageId,
       undefined,
-      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
+      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel!`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(updatedButtons)
       }
     ).catch(() => {});
 
-    await ctx.answerCbQuery({ text: '✅ Vote recorded successfully!' });
+    // Instant popup feedback and direct chat message
+    await ctx.answerCbQuery({ text: '✅ Aapka vote successfully record kar liya gaya hai!' });
 
-    // Send confirmation message to user and prompt device verification
     await ctx.telegram.sendMessage(
       userId,
-      `✅ **Aapka vote successfully record kar liya gaya hai!**\n\nGiveaway: *${giveaway.title}*\nSelected Option: *${giveaway.options[optionIndex].name}*\n\n🔒 Please verify your device to secure your entry:`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.url('🔗 Verify Device Now', verifyUrl)]
-        ])
-      }
+      `✅ **Aapka vote successfully record kar liya gaya hai!**\n\nGiveaway: *${giveaway.title}*\nSelected Option: *${giveaway.options[optionIndex].name}*`,
+      { parse_mode: 'Markdown' }
     ).catch(() => {});
 
   } catch (err) {
@@ -329,7 +319,7 @@ bot.on('chat_member', async (ctx) => {
                 giveaway.channel,
                 giveaway.messageId,
                 undefined,
-                `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
+                `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel!`,
                 {
                   parse_mode: 'Markdown',
                   ...Markup.inlineKeyboard(updatedButtons)
@@ -347,18 +337,33 @@ bot.on('chat_member', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot is running successfully with all advanced features!');
+  console.log('Bot is running successfully!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
 
+// HTTP Server with Keep-Alive Self-Ping to prevent Render sleep issues
 const PORT = process.env.PORT || 3000;
-http.createServer((req, res) => {
+const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Bot server is active!\n');
-}).listen(PORT, () => {
+  res.end('Bot server is active 24/7!\n');
+});
+
+server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
+
+// Self-ping mechanism every 4 minutes to keep Render instance awake
+setInterval(() => {
+  const renderUrl = process.env.RENDER_EXTERNAL_URL;
+  if (renderUrl) {
+    http.get(renderUrl, (res) => {
+      // Keep alive ping sent successfully
+    }).on('error', (err) => {
+      // Ignore ping errors
+    });
+  }
+}, 4 * 60 * 1000);
 
 process.once('SIGINT', () => bot.stop('SIGINT'));
 process.once('SIGTERM', () => bot.stop('SIGTERM'));
