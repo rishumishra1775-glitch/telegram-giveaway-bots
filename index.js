@@ -24,7 +24,7 @@ bot.telegram.setMyCommands([
 // Memory storage
 const userState = {};      
 const activeGiveaways = {}; 
-const userVotes = {};      
+const pendingGiveaways = {}; // Preview ke liye temporary storage
 
 // Main Control Panel Keyboard
 const getControlPanelKeyboard = () => {
@@ -41,7 +41,6 @@ const getControlPanelKeyboard = () => {
 bot.start(async (ctx) => {
   try {
     const userName = ctx.from.first_name || 'User';
-
     await ctx.reply(
       `Welcome, ${userName}! 🎉\n\nChoose an option from the panel below to manage or create your giveaways:`,
       {
@@ -57,9 +56,8 @@ bot.start(async (ctx) => {
 // /restart command
 bot.command('restart', async (ctx) => {
   const userId = ctx.from.id;
-  if (userState[userId]) {
-    delete userState[userId];
-  }
+  if (userState[userId]) delete userState[userId];
+  if (pendingGiveaways[userId]) delete pendingGiveaways[userId];
   await ctx.reply('🔄 **Session reset successfully!** You can start fresh using `/create` or `/menu`.', { parse_mode: 'Markdown' });
 });
 
@@ -96,7 +94,7 @@ bot.action('menu_close', async (ctx) => {
 
 bot.action('menu_support', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('📞 **Support Desk:**\n\n1. Only the creator of a poll can close or edit it.\n2. Use **"Edit Names"** to add or remove nominees from live votes.\n3. Use **"Repost Live Polls"** if channel messages get deleted.', { parse_mode: 'Markdown' });
+  await ctx.reply('📞 **Support Desk:**\n\n1. Only the creator can close or edit a poll.\n2. In creation wizard, send all nominee names at once.\n3. Preview screen lets you check before final posting.', { parse_mode: 'Markdown' });
 });
 
 // --- STEP-BY-STEP GIVEAWAY CREATION WIZARD ---
@@ -117,7 +115,7 @@ bot.on('text', async (ctx, next) => {
 
   const state = userState[userId];
 
-  // 1. Creation Wizard Steps
+  // Step 1: Channel
   if (state.step === 'waiting_channel') {
     state.channel = text;
     try {
@@ -132,34 +130,68 @@ bot.on('text', async (ctx, next) => {
       return ctx.reply('❌ **Error validating channel.** Ensure username is correct and bot is admin.', { parse_mode: 'Markdown' });
     }
     state.step = 'waiting_title';
-    return ctx.reply('✅ Channel validated!\n\nNow enter the **Giveaway / Voting Title**:', { parse_mode: 'Markdown' });
+    return ctx.reply('✅ Channel validated!\n\nNow enter the **Giveaway / Voting Title** (e.g., Best Creator Award):', { parse_mode: 'Markdown' });
   }
 
+  // Step 2: Title
   if (state.step === 'waiting_title') {
     state.title = text;
     state.step = 'waiting_prize';
-    return ctx.reply('🏆 Now enter the **Prize Details**:', { parse_mode: 'Markdown' });
+    return ctx.reply('🏆 Now enter the **Prize Details** (e.g., $100 USDT):', { parse_mode: 'Markdown' });
   }
 
+  // Step 3: Prize & All Nominees in one go
   if (state.step === 'waiting_prize') {
     state.prize = text;
-    state.options = [];
-    state.step = 'waiting_nominees';
-    return ctx.reply('👥 **Add Nominees One by One:**\n\nSend the first nominee name (or type `done` when finished):', { parse_mode: 'Markdown' });
+    state.step = 'waiting_all_nominees';
+    return ctx.reply(
+      '👥 **Enter All Nominee Names:**\n\nSend all the nominee names in a single message (separate each name with a new line or comma):',
+      { parse_mode: 'Markdown' }
+    );
   }
 
-  if (state.step === 'waiting_nominees') {
-    if (text.toLowerCase() === 'done') {
-      if (state.options.length === 0) {
-        return ctx.reply('⚠️ Please add at least one nominee.');
-      }
-      return finishGiveawayCreation(ctx, userId);
+  // Step 4: Parse all nominees at once and show PREVIEW
+  if (state.step === 'waiting_all_nominees') {
+    // Split by newline or comma
+    const options = text.split(/[\n,]+/).map(opt => opt.trim()).filter(opt => opt.length > 0);
+
+    if (options.length === 0) {
+      return ctx.reply('⚠️ Please provide at least one valid nominee name.');
     }
-    state.options.push(text);
-    return ctx.reply(`✅ Nominee added! Send next name or type **done** to finish:`, { parse_mode: 'Markdown' });
+
+    delete userState[userId];
+
+    // Save in pending storage for preview confirmation
+    pendingGiveaways[userId] = {
+      creatorId: userId,
+      channel: state.channel,
+      title: state.title,
+      prize: state.prize,
+      options: options.map(opt => ({ name: opt, votes: 0 }))
+    };
+
+    // Show Preview to User
+    const previewData = pendingGiveaways[userId];
+    const previewButtons = previewData.options.map((opt, index) => {
+      return [Markup.button.callback(`🗳 ${opt.name} (0)`, `dummy_${index}`)];
+    });
+    previewButtons.push([
+      Markup.button.callback('📢 Post Your Giveaway', 'confirm_post_giveaway'),
+      Markup.button.callback('❌ Cancel Anyway', 'cancel_post_giveaway')
+    ]);
+
+    await ctx.reply(
+      `👀 **Giveaway Preview (How it will look in channel):**\n\n` +
+      `🎁 **${previewData.title}**\n\n🏆 **Prize:** ${previewData.prize}\n\nTarget Channel: \`${previewData.channel}\`\n\nReview the voting layout below and click **Post Your Giveaway** to publish:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard(previewButtons)
+      }
+    );
+    return;
   }
 
-  // 2. Editing Live Poll: Adding a new nominee
+  // Editing Live Poll: Adding a new nominee
   if (state.step === 'adding_nominee') {
     const giveawayId = state.giveawayId;
     const giveaway = activeGiveaways[giveawayId];
@@ -177,33 +209,37 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-const finishGiveawayCreation = async (ctx, userId) => {
-  const state = userState[userId];
-  const { channel, title, prize, options } = state;
-  delete userState[userId];
-
-  const giveawayId = 'gw_' + Date.now();
-  
-  activeGiveaways[giveawayId] = {
-    creatorId: userId,
-    title,
-    prize,
-    channel,
-    options: options.map(opt => ({ name: opt, votes: 0 })),
-    status: 'active'
-  };
-
-  const buttons = options.map((opt, index) => {
-    const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
-    return [Markup.button.webApp(`🗳 ${opt} (0)`, verifyUrl)];
-  });
-  
-  buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
-
+// --- CONFIRM OR CANCEL POSTING GIVEAWAY ---
+bot.action('confirm_post_giveaway', async (ctx) => {
   try {
+    const userId = ctx.from.id;
+    const previewData = pendingGiveaways[userId];
+
+    if (!previewData) {
+      return ctx.answerCbQuery({ text: '❌ No pending giveaway found! Start again with /create', show_alert: true });
+    }
+
+    delete pendingGiveaways[userId];
+    const giveawayId = 'gw_' + Date.now();
+
+    activeGiveaways[giveawayId] = {
+      creatorId: userId,
+      title: previewData.title,
+      prize: previewData.prize,
+      channel: previewData.channel,
+      options: previewData.options,
+      status: 'active'
+    };
+
+    const buttons = previewData.options.map((opt, index) => {
+      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
+      return [Markup.button.webApp(`🗳 ${opt.name} (0)`, verifyUrl)];
+    });
+    buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
+
     const sentMsg = await ctx.telegram.sendMessage(
-      channel,
-      `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 **Click an option below to securely verify your device and vote:**`,
+      previewData.channel,
+      `🎁 **${previewData.title}**\n\n🏆 **Prize:** ${previewData.prize}\n\n👇 **Click an option below to securely verify your device and vote:**`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(buttons)
@@ -211,12 +247,23 @@ const finishGiveawayCreation = async (ctx, userId) => {
     );
 
     activeGiveaways[giveawayId].messageId = sentMsg.message_id;
-    return ctx.reply(`🎉 **Giveaway successfully posted!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
+
+    await ctx.answerCbQuery({ text: '🎉 Giveaway posted successfully!' });
+    await ctx.editMessageText(`🎉 **Giveaway successfully posted to your channel!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
   } catch (err) {
     console.error('Error posting giveaway:', err);
-    return ctx.reply(`❌ Failed to post giveaway to channel: ${err.message}`);
+    await ctx.answerCbQuery({ text: `❌ Failed: ${err.message}`, show_alert: true });
   }
-};
+});
+
+bot.action('cancel_post_giveaway', async (ctx) => {
+  const userId = ctx.from.id;
+  if (pendingGiveaways[userId]) {
+    delete pendingGiveaways[userId];
+  }
+  await ctx.answerCbQuery({ text: 'Giveaway creation cancelled.' });
+  await ctx.editMessageText('❌ **Giveaway creation cancelled.** Use `/create` whenever you want to try again.', { parse_mode: 'Markdown' });
+});
 
 // Helper to update channel message dynamically
 const updateChannelPollMessage = async (giveawayId) => {
@@ -229,7 +276,7 @@ const updateChannelPollMessage = async (giveawayId) => {
   });
   buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
-  await ctx.telegram.editMessageText(
+  await bot.telegram.editMessageText(
     giveaway.channel,
     giveaway.messageId,
     undefined,
@@ -466,7 +513,7 @@ bot.command('close', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot running with Creator-Only security, Edit Names & WebApp verification!');
+  console.log('Bot running with All-in-One Nominees, Preview Screen & WebApp verification!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
