@@ -24,7 +24,7 @@ bot.telegram.setMyCommands([
 // Memory storage
 const userState = {};      
 const activeGiveaways = {}; 
-const pendingGiveaways = {}; // Preview ke liye temporary storage
+const pendingGiveaways = {}; 
 
 // Main Control Panel Keyboard
 const getControlPanelKeyboard = () => {
@@ -94,7 +94,7 @@ bot.action('menu_close', async (ctx) => {
 
 bot.action('menu_support', async (ctx) => {
   await ctx.answerCbQuery();
-  await ctx.reply('📞 **Support Desk:**\n\n1. Only the creator can close or edit a poll.\n2. In creation wizard, send all nominee names at once.\n3. Preview screen lets you check before final posting.', { parse_mode: 'Markdown' });
+  await ctx.reply('📞 **Support Desk:**\n\n1. Only the creator can close or edit a poll.\n2. Send all nominee names in a single message separated by commas or new lines.\n3. Preview screen lets you check before final posting.', { parse_mode: 'Markdown' });
 });
 
 // --- STEP-BY-STEP GIVEAWAY CREATION WIZARD ---
@@ -117,20 +117,21 @@ bot.on('text', async (ctx, next) => {
 
   // Step 1: Channel
   if (state.step === 'waiting_channel') {
-    state.channel = text;
     try {
       const botInfo = await ctx.telegram.getMe();
-      const chatMember = await ctx.telegram.getChatMember(state.channel, botInfo.id);
+      const chatMember = await ctx.telegram.getChatMember(text, botInfo.id);
       if (!['administrator', 'creator'].includes(chatMember.status)) {
         delete userState[userId];
-        return ctx.reply('❌ **Error:** The bot is not an administrator in this channel!', { parse_mode: 'Markdown' });
+        return ctx.reply('❌ **Error:** The bot is not an administrator in this channel! Please make the bot an admin first.', { parse_mode: 'Markdown' });
       }
     } catch (err) {
       delete userState[userId];
-      return ctx.reply('❌ **Error validating channel.** Ensure username is correct and bot is admin.', { parse_mode: 'Markdown' });
+      return ctx.reply('❌ **Error validating channel.** Make sure the username is correct and bot is an administrator.', { parse_mode: 'Markdown' });
     }
+
+    state.channel = text;
     state.step = 'waiting_title';
-    return ctx.reply('✅ Channel validated!\n\nNow enter the **Giveaway / Voting Title** (e.g., Best Creator Award):', { parse_mode: 'Markdown' });
+    return ctx.reply('✅ Channel validated successfully!\n\nNow enter the **Giveaway / Voting Title** (e.g., Best Creator Award):', { parse_mode: 'Markdown' });
   }
 
   // Step 2: Title
@@ -140,7 +141,7 @@ bot.on('text', async (ctx, next) => {
     return ctx.reply('🏆 Now enter the **Prize Details** (e.g., $100 USDT):', { parse_mode: 'Markdown' });
   }
 
-  // Step 3: Prize & All Nominees in one go
+  // Step 3: Prize
   if (state.step === 'waiting_prize') {
     state.prize = text;
     state.step = 'waiting_all_nominees';
@@ -152,7 +153,6 @@ bot.on('text', async (ctx, next) => {
 
   // Step 4: Parse all nominees at once and show PREVIEW
   if (state.step === 'waiting_all_nominees') {
-    // Split by newline or comma
     const options = text.split(/[\n,]+/).map(opt => opt.trim()).filter(opt => opt.length > 0);
 
     if (options.length === 0) {
@@ -161,7 +161,6 @@ bot.on('text', async (ctx, next) => {
 
     delete userState[userId];
 
-    // Save in pending storage for preview confirmation
     pendingGiveaways[userId] = {
       creatorId: userId,
       channel: state.channel,
@@ -170,7 +169,6 @@ bot.on('text', async (ctx, next) => {
       options: options.map(opt => ({ name: opt, votes: 0 }))
     };
 
-    // Show Preview to User
     const previewData = pendingGiveaways[userId];
     const previewButtons = previewData.options.map((opt, index) => {
       return [Markup.button.callback(`🗳 ${opt.name} (0)`, `dummy_${index}`)];
@@ -180,7 +178,7 @@ bot.on('text', async (ctx, next) => {
       Markup.button.callback('❌ Cancel Anyway', 'cancel_post_giveaway')
     ]);
 
-    await ctx.reply(
+    return ctx.reply(
       `👀 **Giveaway Preview (How it will look in channel):**\n\n` +
       `🎁 **${previewData.title}**\n\n🏆 **Prize:** ${previewData.prize}\n\nTarget Channel: \`${previewData.channel}\`\n\nReview the voting layout below and click **Post Your Giveaway** to publish:`,
       {
@@ -188,7 +186,6 @@ bot.on('text', async (ctx, next) => {
         ...Markup.inlineKeyboard(previewButtons)
       }
     );
-    return;
   }
 
   // Editing Live Poll: Adding a new nominee
@@ -513,7 +510,7 @@ bot.command('close', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot running with All-in-One Nominees, Preview Screen & WebApp verification!');
+  console.log('Bot running smoothly with Instant Channel Validation & Preview Flow!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
