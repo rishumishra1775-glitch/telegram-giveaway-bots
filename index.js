@@ -33,11 +33,101 @@ const checkAdmin = (ctx) => {
 };
 
 bot.start(async (ctx) => {
+  const payload = ctx.startPayload; // e.g., vote_gw_123_opt_0
+
+  // If payload exists, it's a voting redirection from channel button
+  if (payload && payload.startsWith('vote_')) {
+    const parts = payload.split('_');
+    // Format: vote_ gw_123 _ opt_ 0 -> parts = ['vote', 'gw', '123', 'opt', '0']
+    const gwId = `${parts[1]}_${parts[2]}`;
+    const optIndex = parseInt(parts[4]);
+
+    const giveaway = activeGiveaways[gwId];
+    if (!giveaway || giveaway.status !== 'active') {
+      return ctx.reply('❌ This poll is closed or no longer active.');
+    }
+
+    const userId = ctx.from.id;
+    const channel = giveaway.channel;
+
+    // Check if user has joined the channel
+    let isMember = false;
+    try {
+      const chatMember = await bot.telegram.getChatMember(channel, userId);
+      isMember = ['creator', 'administrator', 'member'].includes(chatMember.status);
+    } catch (e) {
+      isMember = false;
+    }
+
+    if (!isMember) {
+      return ctx.reply(
+        `❌ **Channel Join Required!**\n\nYou must join our official channel *${channel}* first to cast your vote.\n\n1️⃣ Click below to join the channel.\n2️⃣ Then click 'Check Membership & Vote'.`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard([
+            [Markup.button.url('📢 Join Channel', `https://t.me/${channel.replace('@', '')}`)],
+            [Markup.button.callback('🔄 Check Membership & Vote', `verify_${gwId}_${optIndex}`)]
+          ])
+        }
+      );
+    }
+
+    // If already joined, send the direct Web App voting link
+    const voteUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${gwId}&opt=${optIndex}`;
+    return ctx.reply(
+      `✅ **Channel Membership Verified!**\n\nClick the button below to open the voting window and cast your vote for *${giveaway.options[optIndex].name}*:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.webApp('🗳 Open Voting Page', voteUrl)]
+        ])
+      }
+    );
+  }
+
+  // Normal Admin Start Panel
   if (!checkAdmin(ctx)) return;
   await ctx.reply('🤖 **Welcome to Giveaway Bot Control Panel**\n\nChoose an option below:', {
     parse_mode: 'Markdown',
     ...getControlPanelKeyboard()
   });
+});
+
+// Handle 'Check Membership & Vote' callback query
+bot.action(/^verify_(gw_\d+)_(\d+)$/, async (ctx) => {
+  const gwId = ctx.match[1];
+  const optIndex = parseInt(ctx.match[2]);
+  const userId = ctx.from.id;
+
+  const giveaway = activeGiveaways[gwId];
+  if (!giveaway || giveaway.status !== 'active') {
+    return ctx.answerCbQuery({ text: 'Poll is closed or not found!', show_alert: true });
+  }
+
+  let isMember = false;
+  try {
+    const chatMember = await bot.telegram.getChatMember(giveaway.channel, userId);
+    isMember = ['creator', 'administrator', 'member'].includes(chatMember.status);
+  } catch (e) {
+    isMember = false;
+  }
+
+  if (!isMember) {
+    return ctx.answerCbQuery({ text: `❌ You have still not joined ${giveaway.channel}! Please join first.`, show_alert: true });
+  }
+
+  await ctx.answerCbQuery({ text: 'Verified successfully!' });
+  const voteUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${gwId}&opt=${optIndex}`;
+  
+  await ctx.editMessageText(
+    `✅ **Channel Membership Verified!**\n\nClick the button below to open the voting window and cast your vote for *${giveaway.options[optIndex].name}*:`,
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.webApp('🗳 Open Voting Page', voteUrl)]
+      ])
+    }
+  );
 });
 
 bot.action('menu_create', async (ctx) => {
@@ -56,7 +146,7 @@ bot.action('menu_close', async (ctx) => {
 bot.action('menu_support', async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
-  await ctx.reply('📞 Users must join the official channel to vote, and strict 1 vote per device/user is enforced.');
+  await ctx.reply('📞 Users must join the official channel via bot redirect, and strict 1 vote per device/user is enforced.');
 });
 
 const triggerCloseList = async (ctx) => {
@@ -112,6 +202,7 @@ bot.on('text', async (ctx, next) => {
 
   if (state.step === 'waiting_prize') {
     state.prize = text;
+    state.step === 'waiting_nominees';
     state.step = 'waiting_nominees';
     return ctx.reply('👥 Enter Nominee Names line by line (e.g., Name 1\nName 2):');
   }
@@ -139,9 +230,11 @@ bot.on('text', async (ctx, next) => {
     deviceVotesRecord[giveawayId] = {};
     const giveaway = activeGiveaways[giveawayId];
 
+    // Generate buttons pointing to Bot Start with Deep Link payload
+    const botUsername = ctx.botInfo.username;
     const buttons = giveaway.options.map((opt, index) => {
-      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${giveawayId}&opt=${index}`;
-      return [Markup.button.url(`🗳 ${opt.name} (0)`, verifyUrl)];
+      const deepLinkUrl = `https://t.me/${botUsername}?start=vote_${giveawayId}_opt_${index}`;
+      return [Markup.button.url(`🗳 ${opt.name} (0)`, deepLinkUrl)];
     });
 
     try {
@@ -200,9 +293,10 @@ const updateChannelPollMessage = async (gw) => {
   const giveaway = activeGiveaways[gw];
   if (!giveaway || !giveaway.messageId) return;
 
+  const botUsername = bot.botInfo.username;
   const buttons = giveaway.options.map((opt, index) => {
-    const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${gw}&opt=${index}`;
-    return [Markup.button.url(`🗳 ${opt.name} (${opt.votes})`, verifyUrl)];
+    const deepLinkUrl = `https://t.me/${botUsername}?start=vote_${gw}_opt_${index}`;
+    return [Markup.button.url(`🗳 ${opt.name} (${opt.votes})`, deepLinkUrl)];
   });
 
   try {
@@ -253,7 +347,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // 1. Mandatory Channel Membership Check
+        // Final Channel Membership Check on Vote Submission
         if (userId) {
           try {
             const chatMember = await bot.telegram.getChatMember(giveaway.channel, userId);
@@ -263,14 +357,11 @@ const server = http.createServer((req, res) => {
               res.end(JSON.stringify({ success: false, message: `❌ You must join ${giveaway.channel} first to vote!` }));
               return;
             }
-          } catch (e) {
-            // If user ID cannot be verified, fallback or block securely
-          }
+          } catch (e) {}
         }
 
         if (!deviceVotesRecord[gw]) deviceVotesRecord[gw] = {};
         
-        // 2. Strict Device + User Voting Check
         const uniqueKey = userId ? `${userId}_${deviceToken}` : deviceToken;
         if (deviceVotesRecord[gw][uniqueKey] || (userId && deviceVotesRecord[gw][String(userId)])) {
           res.writeHead(400, { 'Content-Type': 'application/json' });
