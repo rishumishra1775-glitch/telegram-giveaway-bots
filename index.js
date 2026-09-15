@@ -1,5 +1,6 @@
 const { Telegraf, Markup } = require('telegraf');
 const http = require('http');
+const fs = require('fs');
 
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
@@ -11,9 +12,31 @@ if (!token) {
 const bot = new Telegraf(token);
 const ADMIN_USER_ID = 7449469384;
 
-const userState = {};      
-const activeGiveaways = {}; 
-const deviceVotesRecord = {}; 
+const DATA_FILE = './bot_data.json';
+let userState = {};      
+let activeGiveaways = {}; 
+let deviceVotesRecord = {}; 
+
+// Load saved data on startup so giveaways aren't lost on restart/crash
+if (fs.existsSync(DATA_FILE)) {
+  try {
+    const rawData = fs.readFileSync(DATA_FILE);
+    const parsedData = JSON.parse(rawData);
+    activeGiveaways = parsedData.activeGiveaways || {};
+    deviceVotesRecord = parsedData.deviceVotesRecord || {};
+    console.log('✅ Active giveaways and votes loaded from storage.');
+  } catch (err) {
+    console.error('Error loading saved data:', err);
+  }
+}
+
+const saveData = () => {
+  try {
+    fs.writeFileSync(DATA_FILE, JSON.stringify({ activeGiveaways, deviceVotesRecord }, null, 2));
+  } catch (err) {
+    console.error('Error saving data:', err);
+  }
+};
 
 const getControlPanelKeyboard = () => {
   return Markup.inlineKeyboard([
@@ -140,7 +163,7 @@ bot.action('menu_close', async (ctx) => {
 bot.action('menu_support', async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
-  await ctx.reply('📞 Strict 1 vote per device & Telegram account enforcement is active.');
+  await ctx.reply('📞 Auto-save file persistence is active. Giveaways are safe against crashes.');
 });
 
 const triggerCloseList = async (ctx) => {
@@ -221,6 +244,8 @@ bot.on('text', async (ctx, next) => {
     };
 
     deviceVotesRecord[giveawayId] = { devices: {}, users: {} };
+    saveData(); // Save state immediately
+
     const giveaway = activeGiveaways[giveawayId];
 
     const botUsername = ctx.botInfo.username;
@@ -236,9 +261,11 @@ bot.on('text', async (ctx, next) => {
         { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
       );
       giveaway.messageId = sentMsg.message_id;
+      saveData();
       return ctx.reply(`🎉 Giveaway posted successfully in *${giveaway.channel}*!`, { parse_mode: 'Markdown', ...getControlPanelKeyboard() });
     } catch (err) {
       delete activeGiveaways[giveawayId];
+      saveData();
       return ctx.reply(`❌ Failed to post: ${err.message}`, getControlPanelKeyboard());
     }
   }
@@ -254,6 +281,7 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
   }
 
   giveaway.status = 'closed';
+  saveData();
 
   const sortedOptions = [...giveaway.options].sort((a, b) => b.votes - a.votes);
 
@@ -354,7 +382,6 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Strict 1 Device = 1 Vote AND 1 User = 1 Vote check
         if (!deviceVotesRecord[gw]) {
           deviceVotesRecord[gw] = { devices: {}, users: {} };
         }
@@ -369,15 +396,14 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Lock both device token and user id
         record.users[stringUserId] = true;
         record.devices[stringDeviceToken] = true;
 
         giveaway.options[opt].votes += 1;
+        saveData(); // Save vote state immediately so it persists
 
         await updateChannelPollMessage(gw);
 
-        // Fetch Username for Admin Notification
         let voterDisplay = 'Web User';
         try {
           const userInfo = await bot.telegram.getChat(userId);
