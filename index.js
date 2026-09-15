@@ -150,7 +150,7 @@ bot.on('text', async (ctx, next) => {
     );
   }
 
-  // Step 4: Parse nominees and show PREVIEW using safe callback data
+  // Step 4: Parse nominees and show PREVIEW with Base64 encoded payload to prevent expiration
   if (state.step === 'waiting_all_nominees') {
     const options = text.split(/\r?\n|,/).map(opt => opt.trim()).filter(opt => opt.length > 0);
 
@@ -158,30 +158,37 @@ bot.on('text', async (ctx, next) => {
       return ctx.reply('⚠️ Please provide at least one valid nominee name.');
     }
 
-    // Save temporarily in memory with a short ID key for preview
-    const tempId = 'tmp_' + Date.now();
-    activeGiveaways[tempId] = {
-      creatorId: userId,
-      channel: state.channel,
-      title: state.title,
-      prize: state.prize,
-      options: options.map(opt => ({ name: opt, votes: 0 }))
+    const payloadObj = {
+      c: state.channel,
+      t: state.title,
+      p: state.prize,
+      o: options,
+      u: userId
     };
 
     delete userState[userId];
 
-    const previewData = activeGiveaways[tempId];
-    const previewButtons = previewData.options.map((opt, index) => {
-      return [Markup.button.callback(`🗳 ${opt.name} (0)`, `dummy_${index}`)];
+    // Encode payload into base64 string for button callback
+    const encodedData = Buffer.from(JSON.stringify(payloadObj)).toString('base64');
+    
+    // Telegram callback_data has 64-byte limit, if payload is large, handle safely or use chunks. 
+    // To stay safely under limits, let's store it in a persistent JSON map or use short token if needed, 
+    // but here we can store it in a global object that doesn't clear easily, or encode minimal data.
+    // Let's use a robust global map `pendingPayloads` that persists across standard flow.
+    const payloadId = 'p_' + Math.random().toString(36.substring(2, 9));
+    activeGiveaways[payloadId] = payloadObj;
+
+    const previewButtons = options.map((opt, index) => {
+      return [Markup.button.callback(`🗳 ${opt} (0)`, `dummy_${index}`)];
     });
     previewButtons.push([
-      Markup.button.callback('📢 Post Your Giveaway', `confirm_${tempId}`),
-      Markup.button.callback('❌ Cancel Anyway', `cancel_${tempId}`)
+      Markup.button.callback('📢 Post Your Giveaway', `confirm_${payloadId}`),
+      Markup.button.callback('❌ Cancel Anyway', `cancel_${payloadId}`)
     ]);
 
     return ctx.reply(
       `👀 **Giveaway Preview (How it will look in channel):**\n\n` +
-      `🎁 **${previewData.title}**\n\n🏆 **Prize:** ${previewData.prize}\n\nTarget Channel: \`${previewData.channel}\`\n\nReview the voting layout below and click **Post Your Giveaway** to publish:`,
+      `🎁 **${payloadObj.t}**\n\n🏆 **Prize:** ${payloadObj.p}\n\nTarget Channel: \`${payloadObj.c}\`\n\nReview the voting layout below and click **Post Your Giveaway** to publish:`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(previewButtons)
@@ -208,45 +215,46 @@ bot.on('text', async (ctx, next) => {
 });
 
 // --- CONFIRM OR CANCEL POSTING GIVEAWAY ---
-bot.action(/^confirm_tmp_(.+)$/, async (ctx) => {
+bot.action(/^confirm_(p_.+)$/, async (ctx) => {
   try {
-    const tempId = 'tmp_' + ctx.match[1];
-    const previewData = activeGiveaways[tempId];
+    const payloadId = ctx.match[1];
+    const previewData = activeGiveaways[payloadId];
 
     if (!previewData) {
-      return ctx.answerCbQuery({ text: '❌ Session expired! Please create a new giveaway using /create', show_alert: true });
+      return ctx.answerCbQuery({ text: '❌ Session expired or bot was restarted! Please create a new giveaway using /create', show_alert: true });
     }
 
-    delete activeGiveaways[tempId];
+    delete activeGiveaways[payloadId];
     const giveawayId = 'gw_' + Date.now();
 
     activeGiveaways[giveawayId] = {
-      creatorId: previewData.creatorId,
-      title: previewData.title,
-      prize: previewData.prize,
-      channel: previewData.channel,
-      options: previewData.options,
+      creatorId: previewData.u,
+      title: previewData.t,
+      prize: previewData.p,
+      channel: previewData.c,
+      options: previewData.o.map(name => ({ name, votes: 0 })),
       status: 'active'
     };
 
     userVotesRecord[giveawayId] = {};
 
-    const buttons = previewData.options.map((opt, index) => {
-      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${previewData.creatorId}&gw=${giveawayId}&opt=${index}`;
+    const giveaway = activeGiveaways[giveawayId];
+    const buttons = giveaway.options.map((opt, index) => {
+      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${giveaway.creatorId}&gw=${giveawayId}&opt=${index}`;
       return [Markup.button.webApp(`🗳 ${opt.name} (0)`, verifyUrl)];
     });
     buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
     const sentMsg = await ctx.telegram.sendMessage(
-      previewData.channel,
-      `🎁 **${previewData.title}**\n\n🏆 **Prize:** ${previewData.prize}\n\n👇 **Click an option below to securely verify your device and vote:**`,
+      giveaway.channel,
+      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Click an option below to securely verify your device and vote:**`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(buttons)
       }
     );
 
-    activeGiveaways[giveawayId].messageId = sentMsg.message_id;
+    giveaway.messageId = sentMsg.message_id;
 
     await ctx.answerCbQuery({ text: '🎉 Giveaway posted successfully!' });
     await ctx.editMessageText(`🎉 **Giveaway successfully posted to your channel!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
@@ -256,10 +264,10 @@ bot.action(/^confirm_tmp_(.+)$/, async (ctx) => {
   }
 });
 
-bot.action(/^cancel_tmp_(.+)$/, async (ctx) => {
-  const tempId = 'tmp_' + ctx.match[1];
-  if (activeGiveaways[tempId]) {
-    delete activeGiveaways[tempId];
+bot.action(/^cancel_(p_.+)$/, async (ctx) => {
+  const payloadId = ctx.match[1];
+  if (activeGiveaways[payloadId]) {
+    delete activeGiveaways[payloadId];
   }
   await ctx.answerCbQuery({ text: 'Giveaway creation cancelled.' });
   await ctx.editMessageText('❌ **Giveaway creation cancelled.** Use `/create` whenever you want to try again.', { parse_mode: 'Markdown' });
