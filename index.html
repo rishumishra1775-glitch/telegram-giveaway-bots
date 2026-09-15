@@ -3,130 +3,99 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Device Verification</title>
+    <title>Giveaway Vote Verification</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            font-family: Arial, sans-serif;
             background-color: #0f172a;
-            color: #ffffff;
+            color: #f8fafc;
             display: flex;
-            justify-content: center;
+            flex-direction: column;
             align-items: center;
+            justify-content: center;
             height: 100vh;
             margin: 0;
+            text-align: center;
+            padding: 20px;
         }
         .card {
-            background-color: #1e293b;
+            background: #1e293b;
             padding: 30px;
             border-radius: 12px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.3);
-            text-align: center;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.5);
             max-width: 400px;
             width: 100%;
         }
-        h2 { color: #38bdf8; }
-        p { color: #94a3b8; font-size: 14px; margin-bottom: 10px;}
-        #status { margin-top: 20px; font-weight: bold; font-size: 15px;}
-        
+        h2 { color: #38bdf8; margin-bottom: 10px; }
+        p { color: #94a3b8; font-size: 14px; margin-bottom: 20px; }
         .btn {
-            background-color: #38bdf8;
-            color: #0f172a;
-            padding: 12px 20px;
-            border: none;
-            border-radius: 6px;
-            font-size: 16px;
-            cursor: pointer;
-            margin-top: 20px;
-            width: 100%;
-            font-weight: bold;
-        }
-        .btn:hover { background-color: #7dd3fc; }
-        
-        #returnBtn {
             background-color: #22c55e;
             color: white;
-            display: none;
-            margin-top: 15px;
-            text-decoration: none;
+            border: none;
+            padding: 12px 20px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 8px;
+            cursor: pointer;
+            width: 100%;
+            transition: 0.2s;
         }
-        #returnBtn:hover { background-color: #16a34a; }
-        
-        .btn:disabled { background-color: #475569; cursor: not-allowed; color: #94a3b8; }
+        .btn:hover { background-color: #16a34a; }
+        .error { color: #f87171; font-weight: bold; }
     </style>
 </head>
 <body>
-    <div class="card">
+    <div class="card" id="content">
         <h2>🔒 Device Verification</h2>
-        <p>Please verify your device to secure your entry. One device is allowed per user.</p>
-        <p style="color: #facc15; font-size: 12px;">Note: This device will be locked after successful verification.</p>
-        
-        <button id="verifyBtn" class="btn" onclick="verifyDevice()">Verify My Device</button>
-        
-        <p id="status"></p>
-        <a id="returnBtn" class="btn" href="#">✅ Return to Telegram</a>
+        <p>Click the button below to verify your device and successfully cast your vote for this poll.</p>
+        <button class="btn" id="voteBtn" onclick="submitVote()">Verify & Cast Vote</button>
     </div>
 
     <script>
+        const tg = window.Telegram.WebApp;
+        tg.expand();
+
         const urlParams = new URLSearchParams(window.location.search);
-        const userId = urlParams.get('user');
-
-        // Tera Admin Telegram ID yahan set kar diya hai
-        const ADMIN_TELEGRAM_ID = "7449469384";
-        const botUsername = "realsvotebot";
+        let gw = urlParams.get('gw');
+        let opt = urlParams.get('opt');
         
-        document.getElementById('returnBtn').href = `https://t.me/${botUsername}`;
+        // Telegram WebApp se real user id nikalne ki koshish, warna fallback
+        let userId = tg.initDataUnsafe?.user?.id || urlParams.get('user') || 'anon_' + Math.random();
 
-        window.onload = function() {
-            const statusText = document.getElementById('status');
-            const verifyBtn = document.getElementById('verifyBtn');
-            const returnBtn = document.getElementById('returnBtn');
+        async function submitVote() {
+            const btn = document.getElementById('voteBtn');
+            btn.disabled = true;
+            btn.innerText = "Verifying & Recording Vote...";
 
-            if (!userId) {
-                statusText.style.color = "#ef4444";
-                statusText.innerText = "⚠️ Error: User ID not found! Please open this link directly from your Telegram bot.";
-                verifyBtn.disabled = true;
-                verifyBtn.innerText = "Invalid Session";
-                return;
+            // Yahan apne Render backend ka live URL dalna agar zaroorat ho, 
+            // ya agar same domain par hai toh relative path use karein:
+            const backendUrl = `https://YOUR-RENDER-APP-URL.onrender.com/vote?gw=${gw}&opt=${opt}&user=${userId}`;
+
+            try {
+                const response = await fetch(backendUrl);
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('content').innerHTML = `
+                        <h2 style="color: #4ade80;">✅ Vote Recorded Successfully!</h2>
+                        <p>Your vote has been counted. You can now return back to Telegram.</p>
+                        <button class="btn" onclick="tg.close()">Return to Telegram</button>
+                    `;
+                } else {
+                    document.getElementById('content').innerHTML = `
+                        <h2 class="error">⚠️ Notice</h2>
+                        <p>${data.message || 'You have already voted or an error occurred.'}</p>
+                        <button class="btn" onclick="tg.close()">Return to Telegram</button>
+                    `;
+                }
+            } catch (err) {
+                document.getElementById('content').innerHTML = `
+                    <h2 class="error">❌ Connection Error</h2>
+                    <p>Could not connect to the voting server. Please try again later.</p>
+                    <button class="btn" onclick="tg.close()">Return to Telegram</button>
+                `;
             }
-
-            // AGAR TU ADMIN HAI, TOH DEVICE LOCK BYPASS HO JAYEGA!
-            if (userId === ADMIN_TELEGRAM_ID) {
-                statusText.style.color = "#4ade80";
-                statusText.innerText = "👑 Admin Bypass Active: No verification needed for you!";
-                verifyBtn.style.display = "none";
-                returnBtn.style.display = "block"; // Seedha Telegram wapas jane ka button dikhega
-                return;
-            }
-
-            // Normal users ke liye device lock check
-            if (localStorage.getItem('telegram_bot_verified')) {
-                statusText.style.color = "#ef4444";
-                statusText.innerText = "⚠️ Verification Already Completed! This device has already been locked.";
-                verifyBtn.disabled = true;
-                verifyBtn.innerText = "Already Verified";
-            }
-        }
-
-        function verifyDevice() {
-            const statusText = document.getElementById('status');
-            const verifyBtn = document.getElementById('verifyBtn');
-            const returnBtn = document.getElementById('returnBtn');
-            
-            if (!userId) return;
-
-            statusText.style.color = "#facc15";
-            statusText.innerText = "Verifying device securely...";
-            verifyBtn.disabled = true;
-            verifyBtn.innerText = "Processing...";
-            
-            setTimeout(() => {
-                localStorage.setItem('telegram_bot_verified', userId);
-                
-                statusText.style.color = "#4ade80";
-                statusText.innerText = "✅ Device Verified Successfully! You can now return to Telegram.";
-                verifyBtn.style.display = "none";
-                returnBtn.style.display = "block";
-            }, 1500);
         }
     </script>
 </body>
