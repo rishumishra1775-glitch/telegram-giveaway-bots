@@ -11,31 +11,15 @@ if (!token) {
 const bot = new Telegraf(token);
 const ADMIN_USER_ID = 7449469384;
 
-bot.telegram.setMyCommands([
-  { command: 'start', description: 'Open Control Panel' },
-  { command: 'menu', description: 'Open Control Panel' },
-  { command: 'create', description: 'Create New Giveaway' },
-  { command: 'close', description: 'Close Active Poll' },
-  { command: 'restart', description: 'Reset Session' }
-]);
-
 const userState = {};      
 const activeGiveaways = {}; 
 const userVotesRecord = {}; 
 const deviceVotesRecord = {}; 
 
-const getControlPanelKeyboard = () => {
-  return Markup.inlineKeyboard([
-    [Markup.button.callback('➕ Create Giveaway', 'menu_create')],
-    [Markup.button.callback('🔒 Close Poll', 'menu_close')],
-    [Markup.button.callback('📞 Support', 'menu_support')]
-  ]);
-};
-
 const checkAdmin = (ctx) => {
   const userId = ctx.from?.id;
   if (userId !== ADMIN_USER_ID) {
-    ctx.reply('❌ Access Denied: You are not authorized.');
+    ctx.reply('❌ Access Denied.');
     return false;
   }
   return true;
@@ -43,32 +27,13 @@ const checkAdmin = (ctx) => {
 
 bot.start(async (ctx) => {
   if (!checkAdmin(ctx)) return;
-  await ctx.reply('Welcome! Choose an option:', getControlPanelKeyboard());
+  await ctx.reply('Welcome! Send /create to make a new giveaway.');
 });
 
-bot.command('restart', async (ctx) => {
+bot.command('create', async (ctx) => {
   if (!checkAdmin(ctx)) return;
-  delete userState[ctx.from.id];
-  await ctx.reply('🔄 Session reset successfully!');
-});
-
-bot.action('menu_create', async (ctx) => {
-  if (!checkAdmin(ctx)) return;
-  await ctx.answerCbQuery();
   userState[ctx.from.id] = { step: 'waiting_title' };
   await ctx.reply('📢 Enter the Giveaway Title:');
-});
-
-bot.action('menu_close', async (ctx) => {
-  if (!checkAdmin(ctx)) return;
-  await ctx.answerCbQuery();
-  await ctx.reply('Send /close to manage active polls.');
-});
-
-bot.action('menu_support', async (ctx) => {
-  if (!checkAdmin(ctx)) return;
-  await ctx.answerCbQuery();
-  await ctx.reply('📞 Each device is restricted to a single vote.');
 });
 
 bot.on('text', async (ctx, next) => {
@@ -116,7 +81,6 @@ bot.on('text', async (ctx, next) => {
       const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${giveawayId}&opt=${index}`;
       return [Markup.button.url(`🗳 ${opt.name} (0)`, verifyUrl)];
     });
-    buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
     try {
       const sentMsg = await ctx.telegram.sendMessage(
@@ -134,21 +98,11 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-bot.action(/^close_(gw_\d+)$/, async (ctx) => {
-  if (!checkAdmin(ctx)) return;
-  const giveawayId = ctx.match[1];
-  const giveaway = activeGiveaways[giveawayId];
-  if (!giveaway) return ctx.answerCbQuery({ text: 'Poll not found!' });
-
-  giveaway.status = 'closed';
-  await ctx.answerCbQuery({ text: 'Closed!' });
-  await ctx.reply('🔒 Poll closed.');
-});
-
 bot.launch();
 
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
+  // CORS Headers for all requests
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
@@ -159,8 +113,55 @@ const server = http.createServer((req, res) => {
     return;
   }
 
+  const urlParams = new URL(req.url, `http://${req.headers.host}`);
+
+  if (req.method === 'POST' && urlParams.pathname === '/vote') {
+    let body = '';
+    req.on('data', chunk => { body += chunk; });
+    req.on('end', () => {
+      try {
+        const data = JSON.parse(body);
+        const { gw, opt, userId, deviceToken } = data;
+
+        if (!deviceToken) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Device verification failed.' }));
+          return;
+        }
+
+        if (activeGiveaways[gw] && activeGiveaways[gw].options && activeGiveaways[gw].options[opt] !== undefined) {
+          if (!deviceVotesRecord[gw]) deviceVotesRecord[gw] = {};
+          if (!userVotesRecord[gw]) userVotesRecord[gw] = {};
+
+          if (deviceVotesRecord[gw][deviceToken]) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, message: 'This device has already been used to vote!' }));
+            return;
+          }
+
+          deviceVotesRecord[gw][deviceToken] = true;
+          userVotesRecord[gw][String(userId)] = true;
+          
+          activeGiveaways[gw].options[opt].votes += 1;
+
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: true, votes: activeGiveaways[gw].options[opt].votes }));
+          return;
+        } else {
+          res.writeHead(404, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Poll not found.' }));
+          return;
+        }
+      } catch (err) {
+        res.writeHead(500, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: false, message: 'Server error processing vote.' }));
+      }
+    });
+    return;
+  }
+
   res.writeHead(200, { 'Content-Type': 'text/plain' });
-  res.end('Server active!\n');
+  res.end('Server active and listening!\n');
 });
 
 server.listen(PORT, () => {
