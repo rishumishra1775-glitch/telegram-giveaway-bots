@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const http = http = require('http'); // standard http
+const http = require('http');
 
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
@@ -13,7 +13,7 @@ const ADMIN_USER_ID = 7449469384;
 
 const userState = {};      
 const activeGiveaways = {}; 
-const deviceVotesRecord = {}; // Stores both Device Tokens and User IDs strictly
+const deviceVotesRecord = {}; 
 
 const getControlPanelKeyboard = () => {
   return Markup.inlineKeyboard([
@@ -396,7 +396,7 @@ const server = http.createServer((req, res) => {
         try {
           await bot.telegram.sendMessage(
             ADMIN_USER_ID,
-            `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${giveaway.title}\n👤 **Voter:** *${voterDisplay}*\n🗳 **Voted For:** *${voterOption}*\n📊 **Total Votes:** ${giveaway.options[opt].votes}`,
+            `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${giveaway.title}\n👤 **Voter:** *${voterDisplay}*\n🗳 **Voted For:** *${votedOption}*\n📊 **Total Votes:** ${giveaway.options[opt].votes}`,
             { parse_mode: 'Markdown' }
           );
         } catch (err) {}
