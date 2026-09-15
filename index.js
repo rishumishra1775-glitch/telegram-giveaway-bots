@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const http = http = require('http');
+const http = require('http');
 
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
@@ -101,7 +101,6 @@ const startCreationWizard = async (ctx) => {
   const userId = ctx.from.id;
   userState[userId] = { step: 'waiting_channel' };
   
-  // Directly passing your channel as default to avoid typing errors!
   const defaultChannel = '@BHAICHARAGROUPP';
   
   await ctx.reply(
