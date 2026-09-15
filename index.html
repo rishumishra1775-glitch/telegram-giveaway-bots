@@ -60,7 +60,7 @@
         let gw = urlParams.get('gw');
         let opt = urlParams.get('opt');
         
-        // Telegram WebApp se real user id nikalne ki koshish, warna fallback
+        // Telegram WebApp se real user id nikalna
         let userId = tg.initDataUnsafe?.user?.id || urlParams.get('user') || 'anon_' + Math.random();
 
         async function submitVote() {
@@ -68,9 +68,8 @@
             btn.disabled = true;
             btn.innerText = "Verifying & Recording Vote...";
 
-            // Yahan apne Render backend ka live URL dalna agar zaroorat ho, 
-            // ya agar same domain par hai toh relative path use karein:
-            const backendUrl = `https://YOUR-RENDER-APP-URL.onrender.com/vote?gw=${gw}&opt=${opt}&user=${userId}`;
+            // Aapka Render URL yahan properly configured hai
+            const backendUrl = `https://telegram-giveaway-bots.onrender.com/vote?gw=${gw}&opt=${opt}&user=${userId}`;
 
             try {
                 const response = await fetch(backendUrl);
