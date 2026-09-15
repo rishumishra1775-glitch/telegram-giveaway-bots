@@ -43,8 +43,8 @@ bot.start(async (ctx) => {
 bot.action('menu_create', async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
-  userState[ctx.from.id] = { step: 'waiting_title' };
-  await ctx.reply('📢 Enter the Giveaway Title:');
+  userState[ctx.from.id] = { step: 'waiting_channel' };
+  await ctx.reply('📢 **Enter the Target Channel Username** (e.g., @BHAICHARAGROUPP):', { parse_mode: 'Markdown' });
 });
 
 bot.action('menu_close', async (ctx) => {
@@ -56,7 +56,7 @@ bot.action('menu_close', async (ctx) => {
 bot.action('menu_support', async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
-  await ctx.reply('📞 Each device is restricted to a single vote per giveaway.');
+  await ctx.reply('📞 Users must join the official channel and each device is restricted to a single vote.');
 });
 
 const triggerCloseList = async (ctx) => {
@@ -82,6 +82,29 @@ bot.on('text', async (ctx, next) => {
   if (!userState[userId]) return next();
   const state = userState[userId];
 
+  if (state.step === 'waiting_channel') {
+    let targetChannel = text;
+    if (!targetChannel.startsWith('@')) {
+      targetChannel = '@' + targetChannel;
+    }
+
+    // Verify if bot is admin in the target channel
+    try {
+      const chatMember = await ctx.telegram.getChatMember(targetChannel, ctx.botInfo.id);
+      const isBotAdmin = ['administrator', 'creator'].includes(chatMember.status);
+      
+      if (!isBotAdmin) {
+        return ctx.reply(`❌ Bot is not an Admin in *${targetChannel}*!\n\nPlease add this bot as an Admin in the channel first, then send the channel username again.`, { parse_mode: 'Markdown' });
+      }
+    } catch (err) {
+      return ctx.reply(`❌ Could not verify channel. Make sure the username is correct and the bot is added as an Admin.\n\nError: ${err.message}`);
+    }
+
+    state.channel = targetChannel;
+    state.step = 'waiting_title';
+    return ctx.reply(`✅ Channel verified: *${targetChannel}*\n\n📢 Now enter the Giveaway Title:`, { parse_mode: 'Markdown' });
+  }
+
   if (state.step === 'waiting_title') {
     state.title = text;
     state.step = 'waiting_prize';
@@ -98,15 +121,18 @@ bot.on('text', async (ctx, next) => {
     const options = text.split(/\r?\n/).map(opt => opt.trim()).filter(opt => opt.length > 0);
     if (options.length === 0) return ctx.reply('⚠️ Please provide valid nominees.');
 
+    const channel = state.channel;
+    const title = state.title;
+    const prize = state.prize;
+
     delete userState[userId];
     const giveawayId = 'gw_' + Date.now();
-    const defaultChannel = '@BHAICHARAGROUPP';
 
     activeGiveaways[giveawayId] = {
       creatorId: userId,
-      title: state.title,
-      prize: state.prize,
-      channel: defaultChannel,
+      title: title,
+      prize: prize,
+      channel: channel,
       options: options.map(name => ({ name, votes: 0 })),
       status: 'active'
     };
@@ -122,11 +148,11 @@ bot.on('text', async (ctx, next) => {
     try {
       const sentMsg = await ctx.telegram.sendMessage(
         giveaway.channel,
-        `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Click below to vote:**`,
+        `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Click below to vote (Channel Join Required):**`,
         { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
       );
       giveaway.messageId = sentMsg.message_id;
-      return ctx.reply('🎉 Giveaway posted successfully!', getControlPanelKeyboard());
+      return ctx.reply(`🎉 Giveaway posted successfully in *${giveaway.channel}*!`, { parse_mode: 'Markdown', ...getControlPanelKeyboard() });
     } catch (err) {
       delete activeGiveaways[giveawayId];
       return ctx.reply(`❌ Failed to post: ${err.message}`, getControlPanelKeyboard());
@@ -145,7 +171,6 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
 
   giveaway.status = 'closed';
 
-  // Sort options by votes descending (Highest votes first)
   const sortedOptions = [...giveaway.options].sort((a, b) => b.votes - a.votes);
 
   let resultText = `📊 **Poll Results: ${giveaway.title}**\n🏆 **Prize:** ${giveaway.prize}\n\n`;
@@ -154,7 +179,6 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
     resultText += `${medal} **Rank ${index + 1}:** ${opt.name} — *${opt.votes} votes*\n`;
   });
 
-  // Send sorted results directly to Admin
   try {
     await bot.telegram.sendMessage(ADMIN_USER_ID, resultText, { parse_mode: 'Markdown' });
   } catch (err) {}
@@ -187,7 +211,7 @@ const updateChannelPollMessage = async (gw) => {
       giveaway.channel,
       giveaway.messageId,
       undefined,
-      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Click below to vote:**`,
+      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Click below to vote (Channel Join Required):**`,
       { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }
     );
   } catch (e) {}
@@ -235,10 +259,8 @@ const server = http.createServer((req, res) => {
           deviceVotesRecord[gw][deviceToken] = true;
           activeGiveaways[gw].options[opt].votes += 1;
 
-          // Live update buttons in Telegram channel
           await updateChannelPollMessage(gw);
 
-          // Notify Admin with details
           const poll = activeGiveaways[gw];
           const votedOption = poll.options[opt].name;
           try {
