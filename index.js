@@ -11,6 +11,9 @@ if (!token) {
 const bot = new Telegraf(token);
 const ADMIN_USER_ID = 7449469384;
 
+// Set to 'false' so device & user restriction is strictly active. Set to 'true' only if you want to bypass it for testing.
+const DISABLE_DEVICE_CHECK = false; 
+
 const userState = {};      
 const activeGiveaways = {}; 
 const deviceVotesRecord = {}; 
@@ -33,12 +36,10 @@ const checkAdmin = (ctx) => {
 };
 
 bot.start(async (ctx) => {
-  const payload = ctx.startPayload; // e.g., vote_gw_123_opt_0
+  const payload = ctx.startPayload; 
 
-  // If payload exists, it's a voting redirection from channel button
   if (payload && payload.startsWith('vote_')) {
     const parts = payload.split('_');
-    // Format: vote_ gw_123 _ opt_ 0 -> parts = ['vote', 'gw', '123', 'opt', '0']
     const gwId = `${parts[1]}_${parts[2]}`;
     const optIndex = parseInt(parts[4]);
 
@@ -50,7 +51,6 @@ bot.start(async (ctx) => {
     const userId = ctx.from.id;
     const channel = giveaway.channel;
 
-    // Check if user has joined the channel
     let isMember = false;
     try {
       const chatMember = await bot.telegram.getChatMember(channel, userId);
@@ -72,7 +72,6 @@ bot.start(async (ctx) => {
       );
     }
 
-    // If already joined, send the direct Web App voting link
     const voteUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${gwId}&opt=${optIndex}`;
     return ctx.reply(
       `✅ **Channel Membership Verified!**\n\nClick the button below to open the voting window and cast your vote for *${giveaway.options[optIndex].name}*:`,
@@ -85,7 +84,6 @@ bot.start(async (ctx) => {
     );
   }
 
-  // Normal Admin Start Panel
   if (!checkAdmin(ctx)) return;
   await ctx.reply('🤖 **Welcome to Giveaway Bot Control Panel**\n\nChoose an option below:', {
     parse_mode: 'Markdown',
@@ -93,7 +91,6 @@ bot.start(async (ctx) => {
   });
 });
 
-// Handle 'Check Membership & Vote' callback query
 bot.action(/^verify_(gw_\d+)_(\d+)$/, async (ctx) => {
   const gwId = ctx.match[1];
   const optIndex = parseInt(ctx.match[2]);
@@ -146,7 +143,7 @@ bot.action('menu_close', async (ctx) => {
 bot.action('menu_support', async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
-  await ctx.reply('📞 Users must join the official channel via bot redirect, and strict 1 vote per device/user is enforced.');
+  await ctx.reply('📞 Channel join is mandatory and strict per-device/user vote restriction is active.');
 });
 
 const triggerCloseList = async (ctx) => {
@@ -202,7 +199,6 @@ bot.on('text', async (ctx, next) => {
 
   if (state.step === 'waiting_prize') {
     state.prize = text;
-    state.step === 'waiting_nominees';
     state.step = 'waiting_nominees';
     return ctx.reply('👥 Enter Nominee Names line by line (e.g., Name 1\nName 2):');
   }
@@ -230,7 +226,6 @@ bot.on('text', async (ctx, next) => {
     deviceVotesRecord[giveawayId] = {};
     const giveaway = activeGiveaways[giveawayId];
 
-    // Generate buttons pointing to Bot Start with Deep Link payload
     const botUsername = ctx.botInfo.username;
     const buttons = giveaway.options.map((opt, index) => {
       const deepLinkUrl = `https://t.me/${botUsername}?start=vote_${giveawayId}_opt_${index}`;
@@ -334,12 +329,6 @@ const server = http.createServer((req, res) => {
         const data = JSON.parse(body);
         const { gw, opt, userId, deviceToken } = data;
 
-        if (!deviceToken) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, message: 'Device verification failed.' }));
-          return;
-        }
-
         const giveaway = activeGiveaways[gw];
         if (!giveaway || giveaway.status !== 'active' || giveaway.options[opt] === undefined) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
@@ -347,7 +336,7 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Final Channel Membership Check on Vote Submission
+        // Channel Membership Check
         if (userId) {
           try {
             const chatMember = await bot.telegram.getChatMember(giveaway.channel, userId);
@@ -360,27 +349,45 @@ const server = http.createServer((req, res) => {
           } catch (e) {}
         }
 
-        if (!deviceVotesRecord[gw]) deviceVotesRecord[gw] = {};
-        
-        const uniqueKey = userId ? `${userId}_${deviceToken}` : deviceToken;
-        if (deviceVotesRecord[gw][uniqueKey] || (userId && deviceVotesRecord[gw][String(userId)])) {
-          res.writeHead(400, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: false, message: 'This device or account has already been used to vote!' }));
-          return;
+        // Device & User restriction check
+        if (!DISABLE_DEVICE_CHECK) {
+          if (!deviceVotesRecord[gw]) deviceVotesRecord[gw] = {};
+          const uniqueKey = userId ? `${userId}_${deviceToken}` : deviceToken;
+          if (deviceVotesRecord[gw][uniqueKey] || (userId && deviceVotesRecord[gw][String(userId)])) {
+            res.writeHead(400, { 'Content-Type': 'application/json' });
+            res.end(JSON.stringify({ success: false, message: 'This device or account has already been used to vote!' }));
+            return;
+          }
+          deviceVotesRecord[gw][uniqueKey] = true;
+          if (userId) deviceVotesRecord[gw][String(userId)] = true;
         }
-
-        deviceVotesRecord[gw][uniqueKey] = true;
-        if (userId) deviceVotesRecord[gw][String(userId)] = true;
 
         giveaway.options[opt].votes += 1;
 
         await updateChannelPollMessage(gw);
 
+        // Fetch User Info to display Username instead of User ID
+        let voterDisplay = 'Web User';
+        if (userId) {
+          try {
+            const userInfo = await bot.telegram.getChat(userId);
+            if (userInfo.username) {
+              voterDisplay = `@${userInfo.username}`;
+            } else if (userInfo.first_name) {
+              voterDisplay = userInfo.first_name;
+            } else {
+              voterDisplay = `ID: ${userId}`;
+            }
+          } catch (err) {
+            voterDisplay = `ID: ${userId}`;
+          }
+        }
+
         const votedOption = giveaway.options[opt].name;
         try {
           await bot.telegram.sendMessage(
             ADMIN_USER_ID,
-            `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${giveaway.title}\n👤 **User ID:** \`${userId || 'Web User'}\`\n🗳 **Voted For:** *${votedOption}*\n📊 **Total Votes:** ${giveaway.options[opt].votes}`,
+            `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${giveaway.title}\n👤 **Voter:** *${voterDisplay}*\n🗳 **Voted For:** *${votedOption}*\n📊 **Total Votes:** ${giveaway.options[opt].votes}`,
             { parse_mode: 'Markdown' }
           );
         } catch (err) {}
