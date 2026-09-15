@@ -22,7 +22,8 @@ bot.telegram.setMyCommands([
 // Memory storage
 const userState = {};      
 const activeGiveaways = {}; 
-const userVotes = {};      
+const userVotes = {};      // Stores verified votes
+const pendingVotes = {};   // Stores unverified click attempts
 
 // /start command
 bot.start(async (ctx) => {
@@ -163,7 +164,7 @@ bot.on('text', async (ctx, next) => {
     try {
       const sentMsg = await ctx.telegram.sendMessage(
         channel,
-        `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
+        `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 **Strict Device Verification Required before voting!** Click an option below:`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard(buttons)
@@ -182,7 +183,7 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-// --- VOTING HANDLING WITH DEVICE VERIFICATION ---
+// --- STRICT VOTE HANDLING (Forces Device Verification FIRST) ---
 bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
   try {
     const giveawayId = ctx.match[1];
@@ -195,15 +196,72 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
     }
 
     const voteKey = `${userId}_${giveawayId}`;
+    
+    // Check if user has ALREADY completely voted and verified before
     if (userVotes[voteKey] !== undefined) {
-      return ctx.answerCbQuery({ text: '⚠️ You have already voted in this giveaway!', show_alert: true });
+      return ctx.answerCbQuery({ text: '⚠️ You have already verified and cast your vote in this giveaway!', show_alert: true });
     }
 
-    // Register vote
+    // Save pending intent
+    pendingVotes[voteKey] = optionIndex;
+
+    // Device verification URL
+    const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}`;
+
+    // Pop-up alert forcing verification
+    await ctx.answerCbQuery({ 
+      text: '⚠️ Device Verification Required! Check private chat to verify and count your vote.', 
+      show_alert: true 
+    });
+
+    // Send direct message demanding verification before vote is accepted
+    await ctx.telegram.sendMessage(
+      userId,
+      `🔒 **Device Verification Required!**\n\nGiveaway: *${giveaway.title}*\nSelected Option: *${giveaway.options[optionIndex].name}*\n\nYour vote is **PENDING** until you complete the quick security check below. Click the button to verify your device:`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url('🔗 Verify Device Now', verifyUrl)],
+          [Markup.button.callback('🔄 Check Verification Status', `check_${giveawayId}`)]
+        ])
+      }
+    ).catch(() => {
+      ctx.reply('⚠️ Please start the bot in private chat first so we can send you the verification link!');
+    });
+
+  } catch (err) {
+    console.error('Error in vote action:', err);
+  }
+});
+
+// --- CHECK VERIFICATION ACTION (Simulates confirming verification & counting vote) ---
+bot.action(/^check_(gw_\d+)$/, async (ctx) => {
+  try {
+    const giveawayId = ctx.match[1];
+    const userId = ctx.from.id;
+    const voteKey = `${userId}_${giveawayId}`;
+
+    if (userVotes[voteKey] !== undefined) {
+      return ctx.answerCbQuery({ text: '✅ Your vote is already counted!', show_alert: true });
+    }
+
+    if (pendingVotes[voteKey] === undefined) {
+      return ctx.answerCbQuery({ text: '❌ No pending vote found. Please click an option in the channel first.', show_alert: true });
+    }
+
+    const optionIndex = pendingVotes[voteKey];
+    const giveaway = activeGiveaways[giveawayId];
+
+    if (!giveaway || giveaway.status !== 'active') {
+      return ctx.answerCbQuery({ text: '❌ Giveaway is closed.', show_alert: true });
+    }
+
+    // Now officially record the vote!
     userVotes[voteKey] = optionIndex;
+    delete pendingVotes[voteKey];
     giveaway.options[optionIndex].votes += 1;
 
-    // Update channel message live with new vote counts
+    // Update channel message live with the new verified vote count
     const updatedButtons = giveaway.options.map((opt, idx) => [
       Markup.button.callback(`🗳 ${opt.name} (${opt.votes})`, `vote_${giveawayId}_${idx}`)
     ]);
@@ -213,31 +271,18 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
       giveaway.channel,
       giveaway.messageId,
       undefined,
-      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
+      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Strict Device Verification Required before voting!** Click an option below:`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(updatedButtons)
       }
     ).catch(() => {});
 
-    // Device verification URL
-    const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
-
-    await ctx.answerCbQuery({ text: '✅ Vote recorded! Please complete device verification.' });
-
-    await ctx.telegram.sendMessage(
-      userId,
-      `✅ **Aapka vote successfully record kar liya gaya hai!**\n\nGiveaway: *${giveaway.title}*\nSelected Option: *${giveaway.options[optionIndex].name}*\n\n🔒 **Please verify your device to finalize your vote:**`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard([
-          [Markup.button.url('🔗 Verify Device Now', verifyUrl)]
-        ])
-      }
-    ).catch(() => {});
+    await ctx.answerCbQuery({ text: '🎉 Verification confirmed! Your vote has been successfully counted.' });
+    await ctx.editMessageText(`✅ **Device Verified Successfully!**\n\nYour vote for *${giveaway.options[optionIndex].name}* in *${giveaway.title}* has been officially recorded. 🎉`, { parse_mode: 'Markdown' });
 
   } catch (err) {
-    console.error('Error in vote action:', err);
+    console.error('Error checking verification:', err);
   }
 });
 
@@ -291,64 +336,14 @@ bot.command('close', async (ctx) => {
   }
 });
 
-// --- ANTI-EXIT VOTE MINUS LISTENER ---
-bot.on('chat_member', async (ctx) => {
-  try {
-    const update = ctx.chatMember;
-    if (!update) return;
-
-    const oldStatus = update.old_chat_member.status;
-    const newStatus = update.new_chat_member.status;
-
-    if (['member', 'administrator'].includes(oldStatus) && ['left', 'kicked'].includes(newStatus)) {
-      const userId = update.from.user.id;
-
-      for (const giveawayId in activeGiveaways) {
-        const voteKey = `${userId}_${giveawayId}`;
-        if (userVotes[voteKey] !== undefined) {
-          const optionIndex = userVotes[voteKey];
-          const giveaway = activeGiveaways[giveawayId];
-
-          if (giveaway && giveaway.status === 'active') {
-            if (giveaway.options[optionIndex].votes > 0) {
-              giveaway.options[optionIndex].votes -= 1;
-            }
-            delete userVotes[voteKey];
-
-            if (giveaway.messageId) {
-              const updatedButtons = giveaway.options.map((opt, idx) => [
-                Markup.button.callback(`🗳 ${opt.name} (${opt.votes})`, `vote_${giveawayId}_${idx}`)
-              ]);
-              updatedButtons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}` )]);
-
-              await ctx.telegram.editMessageText(
-                giveaway.channel,
-                giveaway.messageId,
-                undefined,
-                `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
-                {
-                  parse_mode: 'Markdown',
-                  ...Markup.inlineKeyboard(updatedButtons)
-                }
-              ).catch(() => {});
-            }
-          }
-        }
-      }
-    }
-  } catch (err) {
-    console.error('Error handling chat member leave:', err);
-  }
-});
-
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot is running with device verification enabled!');
+  console.log('Bot running with Strict Device Verification enforcement!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
 
-// HTTP Server with Keep-Alive Self-Ping to prevent Render sleep issues
+// HTTP Server with Keep-Alive Self-Ping
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
   res.writeHead(200, { 'Content-Type': 'text/plain' });
@@ -359,15 +354,10 @@ server.listen(PORT, () => {
   console.log(`HTTP server listening on port ${PORT}`);
 });
 
-// Self-ping mechanism every 4 minutes to keep Render instance awake
 setInterval(() => {
   const renderUrl = process.env.RENDER_EXTERNAL_URL;
   if (renderUrl) {
-    http.get(renderUrl, (res) => {
-      // Keep alive ping sent successfully
-    }).on('error', (err) => {
-      // Ignore ping errors
-    });
+    http.get(renderUrl, (res) => {}).on('error', (err) => {});
   }
 }, 4 * 60 * 1000);
 
