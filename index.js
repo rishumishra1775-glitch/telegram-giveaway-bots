@@ -10,6 +10,9 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
+// Aapki di gayi Telegram ID ko admin set kar diya hai
+const ADMIN_USER_ID = 7449469384;
+
 // Set clean Bot Commands Menu
 bot.telegram.setMyCommands([
   { command: 'start', description: 'Open Control Panel' },
@@ -37,8 +40,19 @@ const getControlPanelKeyboard = () => {
   ]);
 };
 
+// Middleware/Check for Admin Only Access
+const checkAdmin = (ctx) => {
+  const userId = ctx.from?.id;
+  if (userId !== ADMIN_USER_ID) {
+    ctx.reply('❌ **Access Denied:** You are not authorized to use this bot control panel.', { parse_mode: 'Markdown' });
+    return false;
+  }
+  return true;
+};
+
 // /start command
 bot.start(async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   try {
     const userName = ctx.from.first_name || 'User';
     await ctx.reply(
@@ -55,6 +69,7 @@ bot.start(async (ctx) => {
 
 // /restart command
 bot.command('restart', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   const userId = ctx.from.id;
   if (userState[userId]) delete userState[userId];
   await ctx.reply('🔄 **Session reset successfully!** You can start fresh using `/create` or `/menu`.', { parse_mode: 'Markdown' });
@@ -62,6 +77,7 @@ bot.command('restart', async (ctx) => {
 
 // --- MAIN CONTROL PANEL / MENU ---
 bot.command(['menu', 'panel'], async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.reply(
     `⚙️ **Giveaway & Poll Control Panel**\n\nSelect an action below:`,
     {
@@ -72,26 +88,31 @@ bot.command(['menu', 'panel'], async (ctx) => {
 });
 
 bot.action('menu_create', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   startCreationWizard(ctx);
 });
 
 bot.action('menu_edit', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   listUserPollsForEdit(ctx);
 });
 
 bot.action('menu_repost', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   listActivePollsForRepost(ctx);
 });
 
 bot.action('menu_close', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   listUserPollsForClose(ctx);
 });
 
 bot.action('menu_support', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   await ctx.reply('📞 **Support Desk:**\n\n1. Admins can create multiple polls simultaneously.\n2. Each voter can only vote **once** per poll.\n3. Send nominee names line by line.', { parse_mode: 'Markdown' });
 });
@@ -114,10 +135,14 @@ const startCreationWizard = async (ctx) => {
   );
 };
 
-bot.command('create', startCreationWizard);
+bot.command('create', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
+  startCreationWizard(ctx);
+});
 
 // Handle Channel confirmation via Button
 bot.action(/^set_chan_(.+)$/, async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   const userId = ctx.from.id;
   const channel = ctx.match[1];
@@ -141,6 +166,8 @@ bot.action(/^set_chan_(.+)$/, async (ctx) => {
 // Handle text inputs for wizard (Title, Prize, Nominees)
 bot.on('text', async (ctx, next) => {
   const userId = ctx.from.id;
+  if (userId !== ADMIN_USER_ID) return next();
+  
   const text = ctx.message.text.trim();
 
   if (!userState[userId]) return next();
@@ -193,7 +220,6 @@ bot.on('text', async (ctx, next) => {
     const giveaway = activeGiveaways[giveawayId];
     const buttons = giveaway.options.map((opt, index) => {
       const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
-      // Fixed: Using standard URL button to prevent BUTTON_TYPEINVALID errors in channels
       return [Markup.button.url(`🗳 ${opt.name} (0)`, verifyUrl)];
     });
     buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
@@ -236,7 +262,7 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-// Helper to update channel message dynamically
+// Helper to update channel message dynamically with live counts
 const updateChannelPollMessage = async (giveawayId) => {
   const giveaway = activeGiveaways[giveawayId];
   if (!giveaway || !giveaway.messageId) return;
@@ -256,7 +282,9 @@ const updateChannelPollMessage = async (giveawayId) => {
       parse_mode: 'Markdown',
       ...Markup.inlineKeyboard(buttons)
     }
-  ).catch(() => {});
+  ).catch((err) => {
+    console.error('Error updating channel message:', err);
+  });
 };
 
 // --- EDIT LIVE POLL NAMES FEATURE ---
@@ -279,6 +307,7 @@ const listUserPollsForEdit = async (ctx) => {
 };
 
 bot.action(/^edit_menu_(gw_\d+)$/, async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   const giveawayId = ctx.match[1];
   const giveaway = activeGiveaways[giveawayId];
@@ -297,6 +326,7 @@ bot.action(/^edit_menu_(gw_\d+)$/, async (ctx) => {
 });
 
 bot.action(/^add_nom_(gw_\d+)$/, async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   const giveawayId = ctx.match[1];
   userState[ctx.from.id] = { step: 'adding_nominee', giveawayId };
@@ -304,6 +334,7 @@ bot.action(/^add_nom_(gw_\d+)$/, async (ctx) => {
 });
 
 bot.action(/^rem_nom_list_(gw_\d+)$/, async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   const giveawayId = ctx.match[1];
   const giveaway = activeGiveaways[giveawayId];
@@ -323,6 +354,7 @@ bot.action(/^rem_nom_list_(gw_\d+)$/, async (ctx) => {
 });
 
 bot.action(/^remove_opt_(gw_\d+)_(\d+)$/, async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   try {
     const giveawayId = ctx.match[1];
     const optIdx = Number(ctx.match[2]);
@@ -365,16 +397,20 @@ const listActivePollsForRepost = async (ctx) => {
   });
 };
 
-bot.command('repost', listActivePollsForRepost);
+bot.command('repost', async (ctx) => {
+  if (!checkAdmin(ctx)) return;
+  listActivePollsForRepost(ctx);
+});
 
 bot.action(/^repost_(gw_\d+)$/, async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   try {
     const giveawayId = ctx.match[1];
     const giveaway = activeGiveaways[giveawayId];
     const userId = ctx.from.id;
 
-    if (!giveaway || giveaway.status !== 'active' || giveaway.creatorId !== userId) {
-      return ctx.answerCbQuery({ text: '❌ Unauthorized or poll closed!', show_alert: true });
+    if (!giveaway || giveaway.status !== 'active') {
+      return ctx.answerCbQuery({ text: '❌ Poll closed or not found!', show_alert: true });
     }
 
     const buttons = giveaway.options.map((opt, index) => {
@@ -421,17 +457,13 @@ const listUserPollsForClose = async (ctx) => {
 };
 
 bot.action(/^close_(gw_\d+)$/, async (ctx) => {
+  if (!checkAdmin(ctx)) return;
   try {
     const giveawayId = ctx.match[1];
     const giveaway = activeGiveaways[giveawayId];
-    const userId = ctx.from.id;
 
     if (!giveaway || giveaway.status !== 'active') {
       return ctx.answerCbQuery({ text: 'Poll already closed or not found!', show_alert: true });
-    }
-
-    if (giveaway.creatorId !== userId) {
-      return ctx.answerCbQuery({ text: '❌ Unauthorized! Only the creator can close this poll.', show_alert: true });
     }
 
     giveaway.status = 'closed';
@@ -453,7 +485,7 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
 });
 
 bot.command('close', async (ctx) => {
-  const userId = ctx.from.id;
+  if (!checkAdmin(ctx)) return;
   const args = ctx.message.text.split(' ');
   const giveawayId = args[1];
 
@@ -462,10 +494,6 @@ bot.command('close', async (ctx) => {
   }
 
   const giveaway = activeGiveaways[giveawayId];
-  if (giveaway.creatorId !== userId) {
-    return ctx.reply('❌ Unauthorized! Only the creator of this poll can close it.');
-  }
-
   giveaway.status = 'closed';
   try {
     await ctx.telegram.editMessageText(
@@ -489,30 +517,47 @@ bot.launch().then(() => {
   console.error('Failed to launch bot:', err);
 });
 
-// HTTP Server
+// HTTP Server with Fixed Vote Counting & Response Headers
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    res.writeHead(204);
+    res.end();
+    return;
+  }
+
   const urlParams = new URL(req.url, `http://${req.headers.host}`);
   if (urlParams.pathname === '/vote') {
     const gw = urlParams.searchParams.get('gw');
-    const opt = parseInt(urlParams.searchParams.get('opt'));
+    const opt = parseInt(urlParams.searchParams.get('opt'), 10);
     const voterId = urlParams.searchParams.get('user');
 
-    if (activeGiveaways[gw] && activeGiveaways[gw].options[opt]) {
-      if (userVotesRecord[gw] && userVotesRecord[gw][voterId]) {
+    if (activeGiveaways[gw] && activeGiveaways[gw].options && activeGiveaways[gw].options[opt] !== undefined) {
+      if (!userVotesRecord[gw]) userVotesRecord[gw] = {};
+
+      if (userVotesRecord[gw][voterId]) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'You have already voted in this poll!' }));
         return;
       }
 
-      if (!userVotesRecord[gw]) userVotesRecord[gw] = {};
+      // Record vote and increment count properly
       userVotesRecord[gw][voterId] = true;
-
       activeGiveaways[gw].options[opt].votes += 1;
+
+      // Update message on channel instantly with correct counts
       updateChannelPollMessage(gw);
 
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify({ success: true, votes: activeGiveaways[gw].options[opt].votes }));
+      return;
+    } else {
+      res.writeHead(404, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ success: false, message: 'Poll or option not found.' }));
       return;
     }
   }
