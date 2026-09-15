@@ -10,7 +10,7 @@ if (!token) {
 
 const bot = new Telegraf(token);
 
-// Set clean Bot Commands Menu (No 'What can this bot do' text)
+// Set clean Bot Commands Menu
 bot.telegram.setMyCommands([
   { command: 'start', description: 'Open Control Panel' },
   { command: 'menu', description: 'Open Control Panel' },
@@ -24,7 +24,7 @@ const userState = {};
 const activeGiveaways = {}; 
 const userVotes = {};      
 
-// /start command (Clean & Direct)
+// /start command
 bot.start(async (ctx) => {
   try {
     const userName = ctx.from.first_name || 'User';
@@ -164,7 +164,7 @@ bot.on('text', async (ctx, next) => {
       // Post the poll directly to the user's specified channel
       const sentMsg = await ctx.telegram.sendMessage(
         channel,
-        `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote in the channel!`,
+        `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
         {
           parse_mode: 'Markdown',
           ...Markup.inlineKeyboard(buttons)
@@ -183,7 +183,7 @@ bot.on('text', async (ctx, next) => {
   return next();
 });
 
-// --- VOTING HANDLING & LIVE CHANNEL UPDATE (No verification prompt) ---
+// --- VOTING HANDLING WITH DEVICE VERIFICATION ---
 bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
   try {
     const giveawayId = ctx.match[1];
@@ -214,20 +214,27 @@ bot.action(/^vote_(gw_\d+)_(\d+)$/, async (ctx) => {
       giveaway.channel,
       giveaway.messageId,
       undefined,
-      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel!`,
+      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
       {
         parse_mode: 'Markdown',
         ...Markup.inlineKeyboard(updatedButtons)
       }
     ).catch(() => {});
 
-    // Instant popup feedback and direct chat message
-    await ctx.answerCbQuery({ text: '✅ Aapka vote successfully record kar liya gaya hai!' });
+    // Device verification URL
+    const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}`;
+
+    await ctx.answerCbQuery({ text: '✅ Vote recorded! Please complete device verification.' });
 
     await ctx.telegram.sendMessage(
       userId,
-      `✅ **Aapka vote successfully record kar liya gaya hai!**\n\nGiveaway: *${giveaway.title}*\nSelected Option: *${giveaway.options[optionIndex].name}*`,
-      { parse_mode: 'Markdown' }
+      `✅ **Aapka vote successfully record kar liya gaya hai!**\n\nGiveaway: *${giveaway.title}*\nSelected Option: *${giveaway.options[optionIndex].name}*\n\n🔒 **Please verify your device to finalize your vote:**`,
+      {
+        parse_mode: 'Markdown',
+        ...Markup.inlineKeyboard([
+          [Markup.button.url('🔗 Verify Device Now', verifyUrl)]
+        ])
+      }
     ).catch(() => {});
 
   } catch (err) {
@@ -319,7 +326,7 @@ bot.on('chat_member', async (ctx) => {
                 giveaway.channel,
                 giveaway.messageId,
                 undefined,
-                `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel!`,
+                `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
                 {
                   parse_mode: 'Markdown',
                   ...Markup.inlineKeyboard(updatedButtons)
@@ -337,7 +344,7 @@ bot.on('chat_member', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot is running successfully!');
+  console.log('Bot is running with device verification enabled!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
