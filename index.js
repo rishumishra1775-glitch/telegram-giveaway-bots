@@ -17,7 +17,6 @@ let userState = {};
 let activeGiveaways = {}; 
 let deviceVotesRecord = {}; 
 
-// Load saved data on startup so giveaways aren't lost on restart/crash
 if (fs.existsSync(DATA_FILE)) {
   try {
     const rawData = fs.readFileSync(DATA_FILE);
@@ -49,7 +48,7 @@ const getControlPanelKeyboard = () => {
 const checkAdmin = (ctx) => {
   const userId = ctx.from?.id;
   if (userId !== ADMIN_USER_ID) {
-    ctx.reply('❌ Access Denied.');
+    ctx.reply('❌ Access Denied.').catch(() => {});
     return false;
   }
   return true;
@@ -65,7 +64,7 @@ bot.start(async (ctx) => {
 
     const giveaway = activeGiveaways[gwId];
     if (!giveaway || giveaway.status !== 'active') {
-      return ctx.reply('❌ This poll is closed or no longer active.');
+      return ctx.reply('❌ This poll is closed or no longer active.').catch(() => {});
     }
 
     const userId = ctx.from.id;
@@ -89,7 +88,7 @@ bot.start(async (ctx) => {
             [Markup.button.callback('🔄 Check Membership & Vote', `verify_${gwId}_${optIndex}`)]
           ])
         }
-      );
+      ).catch(() => {});
     }
 
     const voteUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${gwId}&opt=${optIndex}`;
@@ -101,14 +100,14 @@ bot.start(async (ctx) => {
           [Markup.button.webApp('🗳 Open Voting Page', voteUrl)]
         ])
       }
-    );
+    ).catch(() => {});
   }
 
   if (!checkAdmin(ctx)) return;
   await ctx.reply('🤖 **Welcome to Giveaway Bot Control Panel**\n\nChoose an option below:', {
     parse_mode: 'Markdown',
     ...getControlPanelKeyboard()
-  });
+  }).catch(() => {});
 });
 
 bot.action(/^verify_(gw_\d+)_(\d+)$/, async (ctx) => {
@@ -118,7 +117,7 @@ bot.action(/^verify_(gw_\d+)_(\d+)$/, async (ctx) => {
 
   const giveaway = activeGiveaways[gwId];
   if (!giveaway || giveaway.status !== 'active') {
-    return ctx.answerCbQuery({ text: 'Poll is closed or not found!', show_alert: true });
+    return ctx.answerCbQuery({ text: 'Poll is closed or not found!', show_alert: true }).catch(() => {});
   }
 
   let isMember = false;
@@ -130,10 +129,10 @@ bot.action(/^verify_(gw_\d+)_(\d+)$/, async (ctx) => {
   }
 
   if (!isMember) {
-    return ctx.answerCbQuery({ text: `❌ You have still not joined ${giveaway.channel}! Please join first.`, show_alert: true });
+    return ctx.answerCbQuery({ text: `❌ You have still not joined ${giveaway.channel}! Please join first.`, show_alert: true }).catch(() => {});
   }
 
-  await ctx.answerCbQuery({ text: 'Verified successfully!' });
+  await ctx.answerCbQuery({ text: 'Verified successfully!' }).catch(() => {});
   const voteUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?gw=${gwId}&opt=${optIndex}`;
   
   await ctx.editMessageText(
@@ -144,36 +143,36 @@ bot.action(/^verify_(gw_\d+)_(\d+)$/, async (ctx) => {
         [Markup.button.webApp('🗳 Open Voting Page', voteUrl)]
       ])
     }
-  );
+  ).catch(() => {});
 });
 
 bot.action('menu_create', async (ctx) => {
   if (!checkAdmin(ctx)) return;
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch(() => {});
   userState[ctx.from.id] = { step: 'waiting_channel' };
-  await ctx.reply('📢 **Enter the Target Channel Username** (e.g., @BHAICHARAGROUPP):', { parse_mode: 'Markdown' });
+  await ctx.reply('📢 **Enter the Target Channel Username** (e.g., @BHAICHARAGROUPP):', { parse_mode: 'Markdown' }).catch(() => {});
 });
 
 bot.action('menu_close', async (ctx) => {
   if (!checkAdmin(ctx)) return;
-  await ctx.answerCbQuery();
+  await ctx.answerCbQuery().catch(() => {});
   triggerCloseList(ctx);
 });
 
 bot.action('menu_support', async (ctx) => {
   if (!checkAdmin(ctx)) return;
-  await ctx.answerCbQuery();
-  await ctx.reply('📞 Auto-save file persistence is active. Giveaways are safe against crashes.');
+  await ctx.answerCbQuery().catch(() => {});
+  await ctx.reply('📞 Crash-proof file persistence is active.').catch(() => {});
 });
 
 const triggerCloseList = async (ctx) => {
   const activeIds = Object.keys(activeGiveaways).filter(id => activeGiveaways[id].status === 'active');
   if (activeIds.length === 0) {
-    return ctx.reply('⚠️ No active giveaways found to close.', { parse_mode: 'Markdown' });
+    return ctx.reply('⚠️ No active giveaways found to close.', { parse_mode: 'Markdown' }).catch(() => {});
   }
   
   const buttons = activeIds.map(id => [Markup.button.callback(`🔒 Close: ${activeGiveaways[id].title}`, `close_${id}`)]);
-  await ctx.reply('🔒 **Select active poll to close:**', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
+  await ctx.reply('🔒 **Select active poll to close:**', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) }).catch(() => {});
 };
 
 bot.command('close', async (ctx) => {
@@ -200,32 +199,32 @@ bot.on('text', async (ctx, next) => {
       const isBotAdmin = ['administrator', 'creator'].includes(chatMember.status);
       
       if (!isBotAdmin) {
-        return ctx.reply(`❌ Bot is not an Admin in *${targetChannel}*!\n\nPlease add this bot as an Admin in the channel first, then send the channel username again.`, { parse_mode: 'Markdown' });
+        return ctx.reply(`❌ Bot is not an Admin in *${targetChannel}*!\n\nPlease add this bot as an Admin in the channel first, then send the channel username again.`, { parse_mode: 'Markdown' }).catch(() => {});
       }
     } catch (err) {
-      return ctx.reply(`❌ Could not verify channel. Make sure the username is correct and the bot is added as an Admin.\n\nError: ${err.message}`);
+      return ctx.reply(`❌ Could not verify channel. Make sure the username is correct and the bot is added as an Admin.\n\nError: ${err.message}`).catch(() => {});
     }
 
     state.channel = targetChannel;
     state.step = 'waiting_title';
-    return ctx.reply(`✅ Channel verified: *${targetChannel}*\n\n📢 Now enter the Giveaway Title:`, { parse_mode: 'Markdown' });
+    return ctx.reply(`✅ Channel verified: *${targetChannel}*\n\n📢 Now enter the Giveaway Title:`, { parse_mode: 'Markdown' }).catch(() => {});
   }
 
   if (state.step === 'waiting_title') {
     state.title = text;
     state.step = 'waiting_prize';
-    return ctx.reply('🏆 Now enter the Prize Details:');
+    return ctx.reply('🏆 Now enter the Prize Details:').catch(() => {});
   }
 
   if (state.step === 'waiting_prize') {
     state.prize = text;
     state.step = 'waiting_nominees';
-    return ctx.reply('👥 Enter Nominee Names line by line (e.g., Name 1\nName 2):');
+    return ctx.reply('👥 Enter Nominee Names line by line (e.g., Name 1\nName 2):').catch(() => {});
   }
 
   if (state.step === 'waiting_nominees') {
     const options = text.split(/\r?\n/).map(opt => opt.trim()).filter(opt => opt.length > 0);
-    if (options.length === 0) return ctx.reply('⚠️ Please provide valid nominees.');
+    if (options.length === 0) return ctx.reply('⚠️ Please provide valid nominees.').catch(() => {});
 
     const channel = state.channel;
     const title = state.title;
@@ -244,7 +243,7 @@ bot.on('text', async (ctx, next) => {
     };
 
     deviceVotesRecord[giveawayId] = { devices: {}, users: {} };
-    saveData(); // Save state immediately
+    saveData(); 
 
     const giveaway = activeGiveaways[giveawayId];
 
@@ -262,11 +261,11 @@ bot.on('text', async (ctx, next) => {
       );
       giveaway.messageId = sentMsg.message_id;
       saveData();
-      return ctx.reply(`🎉 Giveaway posted successfully in *${giveaway.channel}*!`, { parse_mode: 'Markdown', ...getControlPanelKeyboard() });
+      return ctx.reply(`🎉 Giveaway posted successfully in *${giveaway.channel}*!`, { parse_mode: 'Markdown', ...getControlPanelKeyboard() }).catch(() => {});
     } catch (err) {
       delete activeGiveaways[giveawayId];
       saveData();
-      return ctx.reply(`❌ Failed to post: ${err.message}`, getControlPanelKeyboard());
+      return ctx.reply(`❌ Failed to post: ${err.message}`, getControlPanelKeyboard()).catch(() => {});
     }
   }
   return next();
@@ -277,7 +276,7 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
   const giveawayId = ctx.match[1];
   const giveaway = activeGiveaways[giveawayId];
   if (!giveaway || giveaway.status !== 'active') {
-    return ctx.answerCbQuery({ text: 'Poll already closed or not found!' });
+    return ctx.answerCbQuery({ text: 'Poll already closed or not found!' }).catch(() => {});
   }
 
   giveaway.status = 'closed';
@@ -305,8 +304,8 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
     );
   } catch (e) {}
 
-  await ctx.answerCbQuery({ text: 'Poll Closed & Results Sent!' });
-  await ctx.reply(`🔒 Giveaway "${giveaway.title}" closed successfully. Results sent to your chat.`);
+  await ctx.answerCbQuery({ text: 'Poll Closed & Results Sent!' }).catch(() => {});
+  await ctx.reply(`🔒 Giveaway "${giveaway.title}" closed successfully. Results sent to your chat.`).catch(() => {});
 });
 
 const updateChannelPollMessage = async (gw) => {
@@ -330,7 +329,7 @@ const updateChannelPollMessage = async (gw) => {
   } catch (e) {}
 };
 
-bot.launch();
+bot.launch().catch(err => console.log('Bot launch error:', err));
 
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
@@ -367,7 +366,6 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Channel Membership Check
         try {
           const chatMember = await bot.telegram.getChatMember(giveaway.channel, userId);
           const isMember = ['creator', 'administrator', 'member'].includes(chatMember.status);
@@ -400,7 +398,7 @@ const server = http.createServer((req, res) => {
         record.devices[stringDeviceToken] = true;
 
         giveaway.options[opt].votes += 1;
-        saveData(); // Save vote state immediately so it persists
+        saveData();
 
         await updateChannelPollMessage(gw);
 
@@ -414,9 +412,7 @@ const server = http.createServer((req, res) => {
           } else {
             voterDisplay = `ID: ${userId}`;
           }
-        } catch (err) {
-          voterDisplay = `ID: ${userId}`;
-        }
+        } catch (err) {}
 
         const votedOption = giveaway.options[opt].name;
         try {
