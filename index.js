@@ -96,7 +96,7 @@ bot.action('menu_support', async (ctx) => {
   await ctx.reply('📞 **Support Desk:**\n\n1. Admins can create multiple polls simultaneously.\n2. Each voter can only vote **once** per poll.\n3. Send nominee names line by line.', { parse_mode: 'Markdown' });
 });
 
-// --- STEP-BY-STEP GIVEAWAY CREATION WIZARD ---
+// --- STEP-BY-STEP GIVEAWAY CREATION WIZARD (Direct Post) ---
 const startCreationWizard = async (ctx) => {
   const userId = ctx.from.id;
   userState[userId] = { step: 'waiting_channel' };
@@ -150,7 +150,7 @@ bot.on('text', async (ctx, next) => {
     );
   }
 
-  // Step 4: Parse nominees and show PREVIEW
+  // Step 4: Parse nominees and DIRECTLY POST to Channel
   if (state.step === 'waiting_all_nominees') {
     const options = text.split(/\r?\n|,/).map(opt => opt.trim()).filter(opt => opt.length > 0);
 
@@ -158,35 +158,45 @@ bot.on('text', async (ctx, next) => {
       return ctx.reply('⚠️ Please provide at least one valid nominee name.');
     }
 
-    const payloadObj = {
-      c: state.channel,
-      t: state.title,
-      p: state.prize,
-      o: options,
-      u: userId
-    };
-
     delete userState[userId];
 
-    const payloadId = 'p_' + Math.random().toString(36).substring(2, 9);
-    activeGiveaways[payloadId] = payloadObj;
+    const giveawayId = 'gw_' + Date.now();
+    activeGiveaways[giveawayId] = {
+      creatorId: userId,
+      title: state.title,
+      prize: state.prize,
+      channel: state.channel,
+      options: options.map(name => ({ name, votes: 0 })),
+      status: 'active'
+    };
 
-    const previewButtons = options.map((opt, index) => {
-      return [Markup.button.callback(`🗳 ${opt} (0)`, `dummy_${index}`)];
+    userVotesRecord[giveawayId] = {};
+
+    const giveaway = activeGiveaways[giveawayId];
+    const buttons = giveaway.options.map((opt, index) => {
+      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
+      return [Markup.button.webApp(`🗳 ${opt.name} (0)`, verifyUrl)];
     });
-    previewButtons.push([
-      Markup.button.callback('📢 Post Your Giveaway', `confirm_${payloadId}`),
-      Markup.button.callback('❌ Cancel Anyway', `cancel_${payloadId}`)
-    ]);
+    buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
-    return ctx.reply(
-      `👀 **Giveaway Preview (How it will look in channel):**\n\n` +
-      `🎁 **${payloadObj.t}**\n\n🏆 **Prize:** ${payloadObj.p}\n\nTarget Channel: \`${payloadObj.c}\`\n\nReview the voting layout below and click **Post Your Giveaway** to publish:`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard(previewButtons)
-      }
-    );
+    try {
+      const sentMsg = await ctx.telegram.sendMessage(
+        giveaway.channel,
+        `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Click an option below to securely verify your device and vote:**`,
+        {
+          parse_mode: 'Markdown',
+          ...Markup.inlineKeyboard(buttons)
+        }
+      );
+
+      giveaway.messageId = sentMsg.message_id;
+
+      return ctx.reply(`🎉 **Giveaway successfully posted to your channel!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
+    } catch (err) {
+      console.error('Error posting giveaway directly:', err);
+      delete activeGiveaways[giveawayId];
+      return ctx.reply(`❌ Failed to post giveaway to channel: ${err.message}`, { parse_mode: 'Markdown' });
+    }
   }
 
   // Editing Live Poll: Adding a new nominee
@@ -205,65 +215,6 @@ bot.on('text', async (ctx, next) => {
   }
 
   return next();
-});
-
-// --- CONFIRM OR CANCEL POSTING GIVEAWAY ---
-bot.action(/^confirm_(p_.+)$/, async (ctx) => {
-  try {
-    const payloadId = ctx.match[1];
-    const previewData = activeGiveaways[payloadId];
-
-    if (!previewData) {
-      return ctx.answerCbQuery({ text: '❌ Session expired or bot was restarted! Please create a new giveaway using /create', show_alert: true });
-    }
-
-    delete activeGiveaways[payloadId];
-    const giveawayId = 'gw_' + Date.now();
-
-    activeGiveaways[giveawayId] = {
-      creatorId: previewData.u,
-      title: previewData.t,
-      prize: previewData.p,
-      channel: previewData.c,
-      options: previewData.o.map(name => ({ name, votes: 0 })),
-      status: 'active'
-    };
-
-    userVotesRecord[giveawayId] = {};
-
-    const giveaway = activeGiveaways[giveawayId];
-    const buttons = giveaway.options.map((opt, index) => {
-      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${giveaway.creatorId}&gw=${giveawayId}&opt=${index}`;
-      return [Markup.button.webApp(`🗳 ${opt.name} (0)`, verifyUrl)];
-    });
-    buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
-
-    const sentMsg = await ctx.telegram.sendMessage(
-      giveaway.channel,
-      `🎁 **${giveaway.title}**\n\n🏆 **Prize:** ${giveaway.prize}\n\n👇 **Click an option below to securely verify your device and vote:**`,
-      {
-        parse_mode: 'Markdown',
-        ...Markup.inlineKeyboard(buttons)
-      }
-    );
-
-    activeGiveaways[giveawayId].messageId = sentMsg.message_id;
-
-    await ctx.answerCbQuery({ text: '🎉 Giveaway posted successfully!' });
-    await ctx.editMessageText(`🎉 **Giveaway successfully posted to your channel!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
-  } catch (err) {
-    console.error('Error posting giveaway:', err);
-    await ctx.answerCbQuery({ text: `❌ Failed: ${err.message}`, show_alert: true });
-  }
-});
-
-bot.action(/^cancel_(p_.+)$/, async (ctx) => {
-  const payloadId = ctx.match[1];
-  if (activeGiveaways[payloadId]) {
-    delete activeGiveaways[payloadId];
-  }
-  await ctx.answerCbQuery({ text: 'Giveaway creation cancelled.' });
-  await ctx.editMessageText('❌ **Giveaway creation cancelled.** Use `/create` whenever you want to try again.', { parse_mode: 'Markdown' });
 });
 
 // Helper to update channel message dynamically
