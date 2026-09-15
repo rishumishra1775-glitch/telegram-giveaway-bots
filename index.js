@@ -17,16 +17,21 @@ let userState = {};
 let activeGiveaways = {}; 
 let deviceVotesRecord = {}; 
 
-if (fs.existsSync(DATA_FILE)) {
-  try {
-    const rawData = fs.readFileSync(DATA_FILE);
-    const parsedData = JSON.parse(rawData);
-    activeGiveaways = parsedData.activeGiveaways || {};
-    deviceVotesRecord = parsedData.deviceVotesRecord || {};
-    console.log('✅ Active giveaways and votes loaded from storage.');
-  } catch (err) {
-    console.error('Error loading saved data:', err);
+// Safe file loading
+try {
+  if (fs.existsSync(DATA_FILE)) {
+    const rawData = fs.readFileSync(DATA_FILE, 'utf8');
+    if (rawData.trim()) {
+      const parsedData = JSON.parse(rawData);
+      activeGiveaways = parsedData.activeGiveaways || {};
+      deviceVotesRecord = parsedData.deviceVotesRecord || {};
+      console.log('✅ Active giveaways and votes loaded from storage.');
+    }
   }
+} catch (err) {
+  console.error('Error loading saved data, starting fresh:', err);
+  activeGiveaways = {};
+  deviceVotesRecord = {};
 }
 
 const saveData = () => {
@@ -246,7 +251,6 @@ bot.on('text', async (ctx, next) => {
     saveData(); 
 
     const giveaway = activeGiveaways[giveawayId];
-
     const botUsername = ctx.botInfo.username;
     const buttons = giveaway.options.map((opt, index) => {
       const deepLinkUrl = `https://t.me/${botUsername}?start=vote_${giveawayId}_opt_${index}`;
