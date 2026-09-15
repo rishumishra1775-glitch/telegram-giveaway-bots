@@ -59,7 +59,7 @@ bot.command('restart', async (ctx) => {
 
 bot.command(['menu', 'panel'], async (ctx) => {
   if (!checkAdmin(ctx)) return;
-  await ctx.reply(`⚙️ **Control Panel**`, { parse_mode: 'Markdown', ...getControlPanelKeyboard() });
+  await ctx.reply('⚙️ **Control Panel**', { parse_mode: 'Markdown', ...getControlPanelKeyboard() });
 });
 
 bot.action('menu_create', async (ctx) => {
@@ -115,7 +115,7 @@ bot.action(/^set_chan_(.+)$/, async (ctx) => {
   const channel = ctx.match[1];
 
   userState[userId] = { step: 'waiting_title', channel };
-  await ctx.editMessageText(`✅ Channel set!\n\nNow enter the **Giveaway Title**:`, { parse_mode: 'Markdown' });
+  await ctx.editMessageText('✅ Channel set!\n\nNow enter the **Giveaway Title**:', { parse_mode: 'Markdown' });
 });
 
 bot.on('text', async (ctx, next) => {
@@ -212,7 +212,7 @@ bot.action(/^edit_menu_(gw_\d+)$/, async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
   const giveawayId = ctx.match[1];
-  await ctx.reply(`⚙️ Options:`, { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]]) });
+  await ctx.reply('⚙️ Options:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard([[Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]]) });
 });
 
 const listActivePollsForRepost = async (ctx) => {
@@ -220,7 +220,7 @@ const listActivePollsForRepost = async (ctx) => {
   const userPolls = Object.keys(activeGiveaways).filter(id => activeGiveaways[id].status === 'active' && activeGiveaways[id].creatorId === userId);
   if (userPolls.length === 0) return ctx.reply('⚠️ No active polls found.', { parse_mode: 'Markdown' });
   const buttons = userPolls.map(id => [Markup.button.callback(`📢 Repost: ${activeGiveaways[id].title}`, `repost_${id}`)]);
-  await ctx.reply('🔄 Select poll to repost:', { parse_Mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
+  await ctx.reply('🔄 Select poll to repost:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
 });
 
 bot.action(/^repost_(gw_\d+)$/, async (ctx) => {
