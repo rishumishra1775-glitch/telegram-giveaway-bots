@@ -193,7 +193,8 @@ bot.on('text', async (ctx, next) => {
     const giveaway = activeGiveaways[giveawayId];
     const buttons = giveaway.options.map((opt, index) => {
       const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
-      return [Markup.button.webApp(`🗳 ${opt.name} (0)`, verifyUrl)];
+      // Fixed: Using standard URL button to prevent BUTTON_TYPEINVALID errors in channels
+      return [Markup.button.url(`🗳 ${opt.name} (0)`, verifyUrl)];
     });
     buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
@@ -242,7 +243,7 @@ const updateChannelPollMessage = async (giveawayId) => {
 
   const buttons = giveaway.options.map((opt, index) => {
     const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=SYSTEM&gw=${giveawayId}&opt=${index}`;
-    return [Markup.button.webApp(`🗳 ${opt.name} (${opt.votes})`, verifyUrl)];
+    return [Markup.button.url(`🗳 ${opt.name} (${opt.votes})`, verifyUrl)];
   });
   buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
@@ -378,7 +379,7 @@ bot.action(/^repost_(gw_\d+)$/, async (ctx) => {
 
     const buttons = giveaway.options.map((opt, index) => {
       const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
-      return [Markup.button.webApp(`🗳 ${opt.name} (${opt.votes})`, verifyUrl)];
+      return [Markup.button.url(`🗳 ${opt.name} (${opt.votes})`, verifyUrl)];
     });
     buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
