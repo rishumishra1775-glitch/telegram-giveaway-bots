@@ -56,7 +56,7 @@ bot.action('menu_close', async (ctx) => {
 bot.action('menu_support', async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
-  await ctx.reply('📞 Users must join the official channel and each device is restricted to a single vote.');
+  await ctx.reply('📞 Users must join the official channel to vote, and strict 1 vote per device/user is enforced.');
 });
 
 const triggerCloseList = async (ctx) => {
@@ -88,7 +88,6 @@ bot.on('text', async (ctx, next) => {
       targetChannel = '@' + targetChannel;
     }
 
-    // Verify if bot is admin in the target channel
     try {
       const chatMember = await ctx.telegram.getChatMember(targetChannel, ctx.botInfo.id);
       const isBotAdmin = ['administrator', 'creator'].includes(chatMember.status);
@@ -247,38 +246,58 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        if (activeGiveaways[gw] && activeGiveaways[gw].status === 'active' && activeGiveaways[gw].options && activeGiveaways[gw].options[opt] !== undefined) {
-          if (!deviceVotesRecord[gw]) deviceVotesRecord[gw] = {};
-          
-          if (deviceVotesRecord[gw][deviceToken]) {
-            res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, message: 'This device has already been used to vote!' }));
-            return;
-          }
-
-          deviceVotesRecord[gw][deviceToken] = true;
-          activeGiveaways[gw].options[opt].votes += 1;
-
-          await updateChannelPollMessage(gw);
-
-          const poll = activeGiveaways[gw];
-          const votedOption = poll.options[opt].name;
-          try {
-            await bot.telegram.sendMessage(
-              ADMIN_USER_ID,
-              `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${poll.title}\n👤 **User ID:** \`${userId || 'Web User'}\`\n🗳 **Voted For:** *${votedOption}*\n📊 **Total Votes:** ${poll.options[opt].votes}`,
-              { parse_mode: 'Markdown' }
-            );
-          } catch (err) {}
-
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ success: true, votes: poll.options[opt].votes }));
-          return;
-        } else {
+        const giveaway = activeGiveaways[gw];
+        if (!giveaway || giveaway.status !== 'active' || giveaway.options[opt] === undefined) {
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ success: false, message: 'Poll is closed or not found.' }));
           return;
         }
+
+        // 1. Mandatory Channel Membership Check
+        if (userId) {
+          try {
+            const chatMember = await bot.telegram.getChatMember(giveaway.channel, userId);
+            const isMember = ['creator', 'administrator', 'member'].includes(chatMember.status);
+            if (!isMember) {
+              res.writeHead(400, { 'Content-Type': 'application/json' });
+              res.end(JSON.stringify({ success: false, message: `❌ You must join ${giveaway.channel} first to vote!` }));
+              return;
+            }
+          } catch (e) {
+            // If user ID cannot be verified, fallback or block securely
+          }
+        }
+
+        if (!deviceVotesRecord[gw]) deviceVotesRecord[gw] = {};
+        
+        // 2. Strict Device + User Voting Check
+        const uniqueKey = userId ? `${userId}_${deviceToken}` : deviceToken;
+        if (deviceVotesRecord[gw][uniqueKey] || (userId && deviceVotesRecord[gw][String(userId)])) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'This device or account has already been used to vote!' }));
+          return;
+        }
+
+        deviceVotesRecord[gw][uniqueKey] = true;
+        if (userId) deviceVotesRecord[gw][String(userId)] = true;
+
+        giveaway.options[opt].votes += 1;
+
+        await updateChannelPollMessage(gw);
+
+        const votedOption = giveaway.options[opt].name;
+        try {
+          await bot.telegram.sendMessage(
+            ADMIN_USER_ID,
+            `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${giveaway.title}\n👤 **User ID:** \`${userId || 'Web User'}\`\n🗳 **Voted For:** *${votedOption}*\n📊 **Total Votes:** ${giveaway.options[opt].votes}`,
+            { parse_mode: 'Markdown' }
+          );
+        } catch (err) {}
+
+        res.writeHead(200, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ success: true, votes: giveaway.options[opt].votes }));
+        return;
+
       } catch (err) {
         res.writeHead(500, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'Server error processing vote.' }));
