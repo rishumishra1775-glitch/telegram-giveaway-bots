@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Secure Giveaway Vote Verification</title>
+    <title>Device Giveaway Verification</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -47,8 +47,8 @@
 </head>
 <body>
     <div class="card" id="content">
-        <h2>🔒 Secure Device Verification</h2>
-        <p>Click below to securely verify your Telegram account and cast your vote.</p>
+        <h2>🔒 Device Verification</h2>
+        <p>One vote allowed per device. Click below to verify and cast your vote.</p>
         <button class="btn" id="voteBtn" onclick="submitVote()">Verify & Cast Vote</button>
     </div>
 
@@ -60,22 +60,19 @@
         let gw = urlParams.get('gw');
         let opt = urlParams.get('opt');
 
+        // Device unique ID generate karna ya pehle se bani hui nikalna
+        let deviceToken = localStorage.getItem('giveaway_device_token');
+        if (!deviceToken) {
+            deviceToken = 'dev_' + Math.random().toString(36).substring(2) + Date.now().toString(36);
+            localStorage.setItem('giveaway_device_token', deviceToken);
+        }
+
+        let telegramUserId = tg.initDataUnsafe?.user?.id || 'web_user';
+
         async function submitVote() {
             const btn = document.getElementById('voteBtn');
             btn.disabled = true;
-            btn.innerText = "Verifying Telegram Account...";
-
-            // Telegram ka official initData lo (yeh asli user ID verify karne ke liye zaroori hai)
-            const initData = tg.initData || '';
-
-            if (!initData) {
-                document.getElementById('content').innerHTML = `
-                    <h2 class="error">❌ Security Error</h2>
-                    <p>Please open this link directly from the official Telegram app bot button.</p>
-                    <button class="btn" onclick="tg.close()">Close</button>
-                `;
-                return;
-            }
+            btn.innerText = "Checking Device Status...";
 
             const backendUrl = `https://telegram-giveaway-bots.onrender.com/vote`;
 
@@ -83,27 +80,27 @@
                 const response = await fetch(backendUrl, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ gw, opt: Number(opt), initData })
+                    body: JSON.stringify({ gw, opt: Number(opt), userId: telegramUserId, deviceToken })
                 });
                 const data = await response.json();
 
                 if (data.success) {
                     document.getElementById('content').innerHTML = `
                         <h2 style="color: #4ade80;">✅ Vote Recorded Successfully!</h2>
-                        <p>Your vote has been counted securely. You can now return to Telegram.</p>
+                        <p>Your vote has been counted for this device. You can now return to Telegram.</p>
                         <button class="btn" onclick="tg.close()">Return to Telegram</button>
                     `;
                 } else {
                     document.getElementById('content').innerHTML = `
-                        <h2 class="error">⚠️ Notice</h2>
-                        <p>${data.message || 'You have already voted or verification failed.'}</p>
+                        <h2 class="error">⚠️ Device Restricted</h2>
+                        <p>${data.message || 'This device has already been used to cast a vote in this poll!'}</p>
                         <button class="btn" onclick="tg.close()">Return to Telegram</button>
                     `;
                 }
             } catch (err) {
                 document.getElementById('content').innerHTML = `
                     <h2 class="error">❌ Connection Error</h2>
-                    <p>Could not connect to server. Please try again.</p>
+                    <p>Could not connect to voting server. Please try again.</p>
                     <button class="btn" onclick="tg.close()">Return to Telegram</button>
                 `;
             }
