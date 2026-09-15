@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const http = require('http');
+const http = http = require('http'); // standard http
 
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
@@ -11,12 +11,9 @@ if (!token) {
 const bot = new Telegraf(token);
 const ADMIN_USER_ID = 7449469384;
 
-// Set to 'false' so device & user restriction is strictly active. Set to 'true' only if you want to bypass it for testing.
-const DISABLE_DEVICE_CHECK = false; 
-
 const userState = {};      
 const activeGiveaways = {}; 
-const deviceVotesRecord = {}; 
+const deviceVotesRecord = {}; // Stores both Device Tokens and User IDs strictly
 
 const getControlPanelKeyboard = () => {
   return Markup.inlineKeyboard([
@@ -143,7 +140,7 @@ bot.action('menu_close', async (ctx) => {
 bot.action('menu_support', async (ctx) => {
   if (!checkAdmin(ctx)) return;
   await ctx.answerCbQuery();
-  await ctx.reply('📞 Channel join is mandatory and strict per-device/user vote restriction is active.');
+  await ctx.reply('📞 Strict 1 vote per device & Telegram account enforcement is active.');
 });
 
 const triggerCloseList = async (ctx) => {
@@ -223,7 +220,7 @@ bot.on('text', async (ctx, next) => {
       status: 'active'
     };
 
-    deviceVotesRecord[giveawayId] = {};
+    deviceVotesRecord[giveawayId] = { devices: {}, users: {} };
     const giveaway = activeGiveaways[giveawayId];
 
     const botUsername = ctx.botInfo.username;
@@ -336,58 +333,70 @@ const server = http.createServer((req, res) => {
           return;
         }
 
-        // Channel Membership Check
-        if (userId) {
-          try {
-            const chatMember = await bot.telegram.getChatMember(giveaway.channel, userId);
-            const isMember = ['creator', 'administrator', 'member'].includes(chatMember.status);
-            if (!isMember) {
-              res.writeHead(400, { 'Content-Type': 'application/json' });
-              res.end(JSON.stringify({ success: false, message: `❌ You must join ${giveaway.channel} first to vote!` }));
-              return;
-            }
-          } catch (e) {}
+        if (!userId) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: 'Invalid session! Open via Telegram.' }));
+          return;
         }
 
-        // Device & User restriction check
-        if (!DISABLE_DEVICE_CHECK) {
-          if (!deviceVotesRecord[gw]) deviceVotesRecord[gw] = {};
-          const uniqueKey = userId ? `${userId}_${deviceToken}` : deviceToken;
-          if (deviceVotesRecord[gw][uniqueKey] || (userId && deviceVotesRecord[gw][String(userId)])) {
+        // Channel Membership Check
+        try {
+          const chatMember = await bot.telegram.getChatMember(giveaway.channel, userId);
+          const isMember = ['creator', 'administrator', 'member'].includes(chatMember.status);
+          if (!isMember) {
             res.writeHead(400, { 'Content-Type': 'application/json' });
-            res.end(JSON.stringify({ success: false, message: 'This device or account has already been used to vote!' }));
+            res.end(JSON.stringify({ success: false, message: `❌ You must join ${giveaway.channel} first to vote!` }));
             return;
           }
-          deviceVotesRecord[gw][uniqueKey] = true;
-          if (userId) deviceVotesRecord[gw][String(userId)] = true;
+        } catch (e) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: `❌ Could not verify your membership in ${giveaway.channel}!` }));
+          return;
         }
+
+        // Strict 1 Device = 1 Vote AND 1 User = 1 Vote check
+        if (!deviceVotesRecord[gw]) {
+          deviceVotesRecord[gw] = { devices: {}, users: {} };
+        }
+
+        const record = deviceVotesRecord[gw];
+        const stringUserId = String(userId);
+        const stringDeviceToken = deviceToken ? String(deviceToken) : 'unknown_device';
+
+        if (record.users[stringUserId] || record.devices[stringDeviceToken]) {
+          res.writeHead(400, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ success: false, message: '❌ This device or Telegram account has already been used to vote!' }));
+          return;
+        }
+
+        // Lock both device token and user id
+        record.users[stringUserId] = true;
+        record.devices[stringDeviceToken] = true;
 
         giveaway.options[opt].votes += 1;
 
         await updateChannelPollMessage(gw);
 
-        // Fetch User Info to display Username instead of User ID
+        // Fetch Username for Admin Notification
         let voterDisplay = 'Web User';
-        if (userId) {
-          try {
-            const userInfo = await bot.telegram.getChat(userId);
-            if (userInfo.username) {
-              voterDisplay = `@${userInfo.username}`;
-            } else if (userInfo.first_name) {
-              voterDisplay = userInfo.first_name;
-            } else {
-              voterDisplay = `ID: ${userId}`;
-            }
-          } catch (err) {
+        try {
+          const userInfo = await bot.telegram.getChat(userId);
+          if (userInfo.username) {
+            voterDisplay = `@${userInfo.username}`;
+          } else if (userInfo.first_name) {
+            voterDisplay = userInfo.first_name;
+          } else {
             voterDisplay = `ID: ${userId}`;
           }
+        } catch (err) {
+          voterDisplay = `ID: ${userId}`;
         }
 
         const votedOption = giveaway.options[opt].name;
         try {
           await bot.telegram.sendMessage(
             ADMIN_USER_ID,
-            `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${giveaway.title}\n👤 **Voter:** *${voterDisplay}*\n🗳 **Voted For:** *${votedOption}*\n📊 **Total Votes:** ${giveaway.options[opt].votes}`,
+            `📥 **New Vote Recorded!**\n\n📋 **Poll:** ${giveaway.title}\n👤 **Voter:** *${voterDisplay}*\n🗳 **Voted For:** *${voterOption}*\n📊 **Total Votes:** ${giveaway.options[opt].votes}`,
             { parse_mode: 'Markdown' }
           );
         } catch (err) {}
