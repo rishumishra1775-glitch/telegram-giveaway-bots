@@ -161,7 +161,6 @@ bot.on('text', async (ctx, next) => {
     buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
 
     try {
-      // Post the poll directly to the user's specified channel
       const sentMsg = await ctx.telegram.sendMessage(
         channel,
         `🎁 **${title}**\n\n🏆 **Prize:** ${prize}\n\n👇 Click below to vote in the channel! (Device verification required)`,
