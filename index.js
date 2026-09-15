@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const http = require('http');
+const http = http = require('http');
 
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
@@ -96,16 +96,50 @@ bot.action('menu_support', async (ctx) => {
   await ctx.reply('📞 **Support Desk:**\n\n1. Admins can create multiple polls simultaneously.\n2. Each voter can only vote **once** per poll.\n3. Send nominee names line by line.', { parse_mode: 'Markdown' });
 });
 
-// --- STEP-BY-STEP GIVEAWAY CREATION WIZARD (Direct Post) ---
+// --- STEP-BY-STEP GIVEAWAY CREATION WIZARD ---
 const startCreationWizard = async (ctx) => {
   const userId = ctx.from.id;
   userState[userId] = { step: 'waiting_channel' };
-  await ctx.reply('📢 **Giveaway Creator Wizard Started**\n\nPlease send your Target Channel username or link (e.g., `@mychannel`):', { parse_mode: 'Markdown' });
+  
+  // Directly passing your channel as default to avoid typing errors!
+  const defaultChannel = '@BHAICHARAGROUPP';
+  
+  await ctx.reply(
+    `📢 **Giveaway Creator Wizard Started**\n\nTarget Channel detected: \`${defaultChannel}\`\n\nClick below to confirm and proceed:`, 
+    {
+      parse_mode: 'Markdown',
+      ...Markup.inlineKeyboard([
+        [Markup.button.callback('✅ Confirm Channel', `set_chan_${defaultChannel}`)]
+      ])
+    }
+  );
 };
 
 bot.command('create', startCreationWizard);
 
-// Handle text inputs for wizard
+// Handle Channel confirmation via Button
+bot.action(/^set_chan_(.+)$/, async (ctx) => {
+  await ctx.answerCbQuery();
+  const userId = ctx.from.id;
+  const channel = ctx.match[1];
+
+  try {
+    const botInfo = await ctx.telegram.getMe();
+    const chatMember = await ctx.telegram.getChatMember(channel, botInfo.id);
+    if (!['administrator', 'creator'].includes(chatMember.status)) {
+      delete userState[userId];
+      return ctx.editMessageText('❌ **Error:** The bot is not an administrator in this channel! Please make the bot an admin first and try `/create` again.', { parse_mode: 'Markdown' });
+    }
+  } catch (err) {
+    delete userState[userId];
+    return ctx.editMessageText('❌ **Error validating channel.** Make sure the bot is added as an administrator in the channel.', { parse_mode: 'Markdown' });
+  }
+
+  userState[userId] = { step: 'waiting_title', channel };
+  await ctx.editMessageText(`✅ Channel **${channel}** validated successfully!\n\nNow enter the **Giveaway / Voting Title** (e.g., Best Creator Award):`, { parse_mode: 'Markdown' });
+});
+
+// Handle text inputs for wizard (Title, Prize, Nominees)
 bot.on('text', async (ctx, next) => {
   const userId = ctx.from.id;
   const text = ctx.message.text.trim();
@@ -113,25 +147,6 @@ bot.on('text', async (ctx, next) => {
   if (!userState[userId]) return next();
 
   const state = userState[userId];
-
-  // Step 1: Channel
-  if (state.step === 'waiting_channel') {
-    try {
-      const botInfo = await ctx.telegram.getMe();
-      const chatMember = await ctx.telegram.getChatMember(text, botInfo.id);
-      if (!['administrator', 'creator'].includes(chatMember.status)) {
-        delete userState[userId];
-        return ctx.reply('❌ **Error:** The bot is not an administrator in this channel! Please make the bot an admin first.', { parse_mode: 'Markdown' });
-      }
-    } catch (err) {
-      delete userState[userId];
-      return ctx.reply('❌ **Error validating channel.** Make sure the username is correct and bot is an administrator.', { parse_mode: 'Markdown' });
-    }
-
-    state.channel = text;
-    state.step = 'waiting_title';
-    return ctx.reply('✅ Channel validated successfully!\n\nNow enter the **Giveaway / Voting Title** (e.g., Best Creator Award):', { parse_mode: 'Markdown' });
-  }
 
   // Step 2: Title
   if (state.step === 'waiting_title') {
@@ -158,14 +173,18 @@ bot.on('text', async (ctx, next) => {
       return ctx.reply('⚠️ Please provide at least one valid nominee name.');
     }
 
+    const channel = state.channel;
+    const title = state.title;
+    const prize = state.prize;
+
     delete userState[userId];
 
     const giveawayId = 'gw_' + Date.now();
     activeGiveaways[giveawayId] = {
       creatorId: userId,
-      title: state.title,
-      prize: state.prize,
-      channel: state.channel,
+      title: title,
+      prize: prize,
+      channel: channel,
       options: options.map(name => ({ name, votes: 0 })),
       status: 'active'
     };
@@ -191,7 +210,7 @@ bot.on('text', async (ctx, next) => {
 
       giveaway.messageId = sentMsg.message_id;
 
-      return ctx.reply(`🎉 **Giveaway successfully posted to your channel!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
+      return ctx.reply(`🎉 **Giveaway successfully posted to your channel (${channel})!**\n🆔 Giveaway ID: \`${giveawayId}\``, { parse_mode: 'Markdown' });
     } catch (err) {
       console.error('Error posting giveaway directly:', err);
       delete activeGiveaways[giveawayId];
