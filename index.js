@@ -1,5 +1,5 @@
 const { Telegraf, Markup } = require('telegraf');
-const http = http = require('http');
+const http = require('http');
 
 const token = process.env.BOT_TOKEN || process.env.TOKEN;
 
@@ -23,9 +23,8 @@ bot.telegram.setMyCommands([
 
 // Memory storage
 const userState = {};      
-const activeGiveaways = {}; // Store all active giveaways (Multiple allowed per admin)
-const pendingGiveaways = {}; 
-const userVotesRecord = {}; // Track user votes to prevent multiple voting: userVotesRecord[giveawayId][userId] = true
+const activeGiveaways = {}; 
+const userVotesRecord = {}; 
 
 // Main Control Panel Keyboard
 const getControlPanelKeyboard = () => {
@@ -58,7 +57,6 @@ bot.start(async (ctx) => {
 bot.command('restart', async (ctx) => {
   const userId = ctx.from.id;
   if (userState[userId]) delete userState[userId];
-  if (pendingGiveaways[userId]) delete pendingGiveaways[userId];
   await ctx.reply('🔄 **Session reset successfully!** You can start fresh using `/create` or `/menu`.', { parse_mode: 'Markdown' });
 });
 
@@ -102,13 +100,12 @@ bot.action('menu_support', async (ctx) => {
 const startCreationWizard = async (ctx) => {
   const userId = ctx.from.id;
   userState[userId] = { step: 'waiting_channel' };
-  pendingGiveaways[userId] = {};
   await ctx.reply('📢 **Giveaway Creator Wizard Started**\n\nPlease send your Target Channel username or link (e.g., `@mychannel`):', { parse_mode: 'Markdown' });
 };
 
 bot.command('create', startCreationWizard);
 
-// Handle text inputs for wizard and editing options
+// Handle text inputs for wizard
 bot.on('text', async (ctx, next) => {
   const userId = ctx.from.id;
   const text = ctx.message.text.trim();
@@ -148,12 +145,12 @@ bot.on('text', async (ctx, next) => {
     state.prize = text;
     state.step = 'waiting_all_nominees';
     return ctx.reply(
-      '👥 **Enter All Nominee Names:**\n\nSend all the nominee names (each name on a new line):',
+      '👥 **Enter All Nominee Names:**\n\nSend all the nominee names (each name on a new line or separated by comma):',
       { parse_mode: 'Markdown' }
     );
   }
 
-  // Step 4: Parse nominees line-by-line and show PREVIEW
+  // Step 4: Parse nominees and show PREVIEW using safe callback data
   if (state.step === 'waiting_all_nominees') {
     const options = text.split(/\r?\n|,/).map(opt => opt.trim()).filter(opt => opt.length > 0);
 
@@ -161,7 +158,9 @@ bot.on('text', async (ctx, next) => {
       return ctx.reply('⚠️ Please provide at least one valid nominee name.');
     }
 
-    pendingGiveaways[userId] = {
+    // Save temporarily in memory with a short ID key for preview
+    const tempId = 'tmp_' + Date.now();
+    activeGiveaways[tempId] = {
       creatorId: userId,
       channel: state.channel,
       title: state.title,
@@ -171,13 +170,13 @@ bot.on('text', async (ctx, next) => {
 
     delete userState[userId];
 
-    const previewData = pendingGiveaways[userId];
+    const previewData = activeGiveaways[tempId];
     const previewButtons = previewData.options.map((opt, index) => {
       return [Markup.button.callback(`🗳 ${opt.name} (0)`, `dummy_${index}`)];
     });
     previewButtons.push([
-      Markup.button.callback('📢 Post Your Giveaway', 'confirm_post_giveaway'),
-      Markup.button.callback('❌ Cancel Anyway', 'cancel_post_giveaway')
+      Markup.button.callback('📢 Post Your Giveaway', `confirm_${tempId}`),
+      Markup.button.callback('❌ Cancel Anyway', `cancel_${tempId}`)
     ]);
 
     return ctx.reply(
@@ -209,20 +208,20 @@ bot.on('text', async (ctx, next) => {
 });
 
 // --- CONFIRM OR CANCEL POSTING GIVEAWAY ---
-bot.action('confirm_post_giveaway', async (ctx) => {
+bot.action(/^confirm_tmp_(.+)$/, async (ctx) => {
   try {
-    const userId = ctx.from.id;
-    const previewData = pendingGiveaways[userId];
+    const tempId = 'tmp_' + ctx.match[1];
+    const previewData = activeGiveaways[tempId];
 
     if (!previewData) {
-      return ctx.answerCbQuery({ text: '❌ No pending giveaway found! Start again with /create', show_alert: true });
+      return ctx.answerCbQuery({ text: '❌ Session expired! Please create a new giveaway using /create', show_alert: true });
     }
 
-    delete pendingGiveaways[userId];
+    delete activeGiveaways[tempId];
     const giveawayId = 'gw_' + Date.now();
 
     activeGiveaways[giveawayId] = {
-      creatorId: userId,
+      creatorId: previewData.creatorId,
       title: previewData.title,
       prize: previewData.prize,
       channel: previewData.channel,
@@ -230,11 +229,10 @@ bot.action('confirm_post_giveaway', async (ctx) => {
       status: 'active'
     };
 
-    // Initialize vote tracking for this specific poll
     userVotesRecord[giveawayId] = {};
 
     const buttons = previewData.options.map((opt, index) => {
-      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${userId}&gw=${giveawayId}&opt=${index}`;
+      const verifyUrl = `https://rishumishra1775-glitch.github.io/telegram-giveaway-bots/?user=${previewData.creatorId}&gw=${giveawayId}&opt=${index}`;
       return [Markup.button.webApp(`🗳 ${opt.name} (0)`, verifyUrl)];
     });
     buttons.push([Markup.button.callback('🔒 Close Poll', `close_${giveawayId}`)]);
@@ -258,10 +256,10 @@ bot.action('confirm_post_giveaway', async (ctx) => {
   }
 });
 
-bot.action('cancel_post_giveaway', async (ctx) => {
-  const userId = ctx.from.id;
-  if (pendingGiveaways[userId]) {
-    delete pendingGiveaways[userId];
+bot.action(/^cancel_tmp_(.+)$/, async (ctx) => {
+  const tempId = 'tmp_' + ctx.match[1];
+  if (activeGiveaways[tempId]) {
+    delete activeGiveaways[tempId];
   }
   await ctx.answerCbQuery({ text: 'Giveaway creation cancelled.' });
   await ctx.editMessageText('❌ **Giveaway creation cancelled.** Use `/create` whenever you want to try again.', { parse_mode: 'Markdown' });
@@ -432,7 +430,7 @@ bot.action(/^repost_(gw_\d+)$/, async (ctx) => {
   }
 });
 
-// --- SECURE CLOSE POLL (Creator Only) ---
+// --- SECURE CLOSE POLL ---
 const listUserPollsForClose = async (ctx) => {
   const userId = ctx.from.id;
   const userPolls = Object.keys(activeGiveaways).filter(id => activeGiveaways[id].status === 'active' && activeGiveaways[id].creatorId === userId);
@@ -515,33 +513,30 @@ bot.command('close', async (ctx) => {
 
 // Launch Bot
 bot.launch().then(() => {
-  console.log('Bot running smoothly with Multiple Concurrent Polls & Single Vote Restriction!');
+  console.log('Bot running smoothly!');
 }).catch((err) => {
   console.error('Failed to launch bot:', err);
 });
 
-// HTTP Server with Keep-Alive & Secure Vote Handler (1 Vote per User per Poll)
+// HTTP Server
 const PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
   const urlParams = new URL(req.url, `http://${req.headers.host}`);
   if (urlParams.pathname === '/vote') {
     const gw = urlParams.searchParams.get('gw');
     const opt = parseInt(urlParams.searchParams.get('opt'));
-    const voterId = urlParams.searchParams.get('user'); // Voter Telegram ID from WebApp
+    const voterId = urlParams.searchParams.get('user');
 
     if (activeGiveaways[gw] && activeGiveaways[gw].options[opt]) {
-      // Check if user already voted in this specific poll
       if (userVotesRecord[gw] && userVotesRecord[gw][voterId]) {
         res.writeHead(400, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ success: false, message: 'You have already voted in this poll!' }));
         return;
       }
 
-      // Record vote
       if (!userVotesRecord[gw]) userVotesRecord[gw] = {};
       userVotesRecord[gw][voterId] = true;
 
-      // Increment vote count
       activeGiveaways[gw].options[opt].votes += 1;
       updateChannelPollMessage(gw);
 
