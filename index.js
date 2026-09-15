@@ -220,7 +220,7 @@ const listActivePollsForRepost = async (ctx) => {
   const userPolls = Object.keys(activeGiveaways).filter(id => activeGiveaways[id].status === 'active' && activeGiveaways[id].creatorId === userId);
   if (userPolls.length === 0) return ctx.reply('⚠️ No active polls found.', { parse_mode: 'Markdown' });
   const buttons = userPolls.map(id => [Markup.button.callback(`📢 Repost: ${activeGiveaways[id].title}`, `repost_${id}`)]);
-  await ctx.reply('🔄 Select poll to repost:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
+  await ctx.reply('🔄 Select poll to repost:', { parse_Mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
 });
 
 bot.action(/^repost_(gw_\d+)$/, async (ctx) => {
@@ -262,20 +262,15 @@ bot.action(/^close_(gw_\d+)$/, async (ctx) => {
 
   giveaway.status = 'closed';
 
-  const resultsText = `🔒 **[CLOSED] ${giveaway.title}**\n\n🏁 **Final Results:**\n` +
-    giveaway.options.map(opt => `• ${opt.name}: **${opt.votes} votes**`).join('\n');
-
   try {
     await ctx.telegram.editMessageText(
       giveaway.channel,
       giveaway.messageId,
       undefined,
-      resultsText,
+      `🔒 **[CLOSED] ${giveaway.title}**`,
       { parse_mode: 'Markdown' }
     );
-  } catch (err) {
-    // Ignore if message cannot be edited
-  }
+  } catch (e) {}
 
   await ctx.answerCbQuery({ text: 'Closed!' });
   await ctx.reply('🔒 Poll closed successfully!', { parse_mode: 'Markdown' });
