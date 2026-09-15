@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Giveaway Vote Verification</title>
+    <title>Secure Giveaway Vote Verification</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         body {
@@ -47,8 +47,8 @@
 </head>
 <body>
     <div class="card" id="content">
-        <h2>🔒 Device Verification</h2>
-        <p>Click the button below to verify your device and successfully cast your vote for this poll.</p>
+        <h2>🔒 Secure Device Verification</h2>
+        <p>Click below to securely verify your Telegram account and cast your vote.</p>
         <button class="btn" id="voteBtn" onclick="submitVote()">Verify & Cast Vote</button>
     </div>
 
@@ -59,39 +59,51 @@
         const urlParams = new URLSearchParams(window.location.search);
         let gw = urlParams.get('gw');
         let opt = urlParams.get('opt');
-        
-        // Telegram WebApp se real user id nikalna
-        let userId = tg.initDataUnsafe?.user?.id || urlParams.get('user') || 'anon_' + Math.random();
 
         async function submitVote() {
             const btn = document.getElementById('voteBtn');
             btn.disabled = true;
-            btn.innerText = "Verifying & Recording Vote...";
+            btn.innerText = "Verifying Telegram Account...";
 
-            // Aapka Render URL yahan properly configured hai
-            const backendUrl = `https://telegram-giveaway-bots.onrender.com/vote?gw=${gw}&opt=${opt}&user=${userId}`;
+            // Telegram ka official initData lo (yeh asli user ID verify karne ke liye zaroori hai)
+            const initData = tg.initData || '';
+
+            if (!initData) {
+                document.getElementById('content').innerHTML = `
+                    <h2 class="error">❌ Security Error</h2>
+                    <p>Please open this link directly from the official Telegram app bot button.</p>
+                    <button class="btn" onclick="tg.close()">Close</button>
+                `;
+                return;
+            }
+
+            const backendUrl = `https://telegram-giveaway-bots.onrender.com/vote`;
 
             try {
-                const response = await fetch(backendUrl);
+                const response = await fetch(backendUrl, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ gw, opt: Number(opt), initData })
+                });
                 const data = await response.json();
 
                 if (data.success) {
                     document.getElementById('content').innerHTML = `
                         <h2 style="color: #4ade80;">✅ Vote Recorded Successfully!</h2>
-                        <p>Your vote has been counted. You can now return back to Telegram.</p>
+                        <p>Your vote has been counted securely. You can now return to Telegram.</p>
                         <button class="btn" onclick="tg.close()">Return to Telegram</button>
                     `;
                 } else {
                     document.getElementById('content').innerHTML = `
                         <h2 class="error">⚠️ Notice</h2>
-                        <p>${data.message || 'You have already voted or an error occurred.'}</p>
+                        <p>${data.message || 'You have already voted or verification failed.'}</p>
                         <button class="btn" onclick="tg.close()">Return to Telegram</button>
                     `;
                 }
             } catch (err) {
                 document.getElementById('content').innerHTML = `
                     <h2 class="error">❌ Connection Error</h2>
-                    <p>Could not connect to the voting server. Please try again later.</p>
+                    <p>Could not connect to server. Please try again.</p>
                     <button class="btn" onclick="tg.close()">Return to Telegram</button>
                 `;
             }
