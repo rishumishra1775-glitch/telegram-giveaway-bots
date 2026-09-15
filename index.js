@@ -250,26 +250,35 @@ const listUserPollsForClose = async (ctx) => {
   if (userPolls.length === 0) return ctx.reply('⚠️ No active polls to close.', { parse_mode: 'Markdown' });
   const buttons = userPolls.map(id => [Markup.button.callback(`🔒 Close: ${activeGiveaways[id].title}`, `close_${id}`)]);
   await ctx.reply('🔒 Select poll to close:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
-};
+});
 
 bot.action(/^close_(gw_\d+)$/, async (ctx) => {
   if (!checkAdmin(ctx)) return;
   const giveawayId = ctx.match[1];
   const giveaway = activeGiveaways[giveawayId];
-  if (!giveaway || giveaway.status !== 'active') return ctx.answerCbQuery({ text: 'Already closed!', show_alert: true });
+  if (!giveaway || giveaway.status !== 'active') {
+    return ctx.answerCbQuery({ text: 'Already closed!', show_alert: true });
+  }
 
   giveaway.status = 'closed';
-  await ctx.telegram.editMessageText(
-    giveaway.channel,
-    giveaway.messageId,
-    undefined,
-    `🔒 **[CLOSED] ${giveaway.title}**\n\n🏁 **Final Results:**\n` +
-    giveaway.options.map(opt => `• ${opt.name}: **${opt.votes} votes**`).join('\n'),
-    { parse_mode: 'Markdown' }
-  ).catch(() => {});
+
+  const resultsText = `🔒 **[CLOSED] ${giveaway.title}**\n\n🏁 **Final Results:**\n` +
+    giveaway.options.map(opt => `• ${opt.name}: **${opt.votes} votes**`).join('\n');
+
+  try {
+    await ctx.telegram.editMessageText(
+      giveaway.channel,
+      giveaway.messageId,
+      undefined,
+      resultsText,
+      { parse_mode: 'Markdown' }
+    );
+  } catch (err) {
+    // Ignore if message cannot be edited
+  }
 
   await ctx.answerCbQuery({ text: 'Closed!' });
-  await ctx.reply(`🔒 Poll closed successfully!`, { parse_mode: 'Markdown' });
+  await ctx.reply('🔒 Poll closed successfully!', { parse_mode: 'Markdown' });
 });
 
 bot.launch();
