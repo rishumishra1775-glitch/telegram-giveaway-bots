@@ -249,8 +249,8 @@ const listUserPollsForClose = async (ctx) => {
   const userPolls = Object.keys(activeGiveaways).filter(id => activeGiveaways[id].status === 'active' && activeGiveaways[id].creatorId === userId);
   if (userPolls.length === 0) return ctx.reply('⚠️ No active polls to close.', { parse_mode: 'Markdown' });
   const buttons = userPolls.map(id => [Markup.button.callback(`🔒 Close: ${activeGiveaways[id].title}`, `close_${id}`)]);
-  await ctx.reply('🔒 Select poll to close:', { parse_Mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
-});
+  await ctx.reply('🔒 Select poll to close:', { parse_mode: 'Markdown', ...Markup.inlineKeyboard(buttons) });
+};
 
 bot.action(/^close_(gw_\d+)$/, async (ctx) => {
   if (!checkAdmin(ctx)) return;
@@ -347,4 +347,4 @@ const server = http.createServer((req, res) => {
 
 server.listen(PORT, () => {
   console.log(`Server listening on port ${PORT}`);
-});b
+});
